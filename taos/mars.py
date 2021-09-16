@@ -20,9 +20,6 @@ import cmocean.cm as cm
 import gsw
 
 
-
-
-
 # -----------------------------
 
 def browse_files(year=None):
@@ -44,6 +41,30 @@ def extract_date(f):
     """
     _date = f.split("/")[-1].split("_")[-1].replace(".nc","")
     return pd.Timestamp(_date)
+
+def load_date(date):
+    """ Load one file from date
+    
+    Parameters
+    ----------
+    date: pd.Timestamp, str
+        Selected date
+    """
+    
+    # convert to date
+    if isinstance(date, str):
+        date = pd.Timestamp(date)
+
+    files = browse_files(date.year)
+    #print("Number of data files = {} ".format(len(files)))    
+
+    ds = xr.open_dataset(files.loc[date, "files"])
+
+    # add vertical coordinate and eos variables
+    ds = ds.assign_coords(z = get_z(ds).transpose("time", "level", "nj", "ni"))
+    ds = add_eos(ds)
+
+    return ds
 
 def read_one_file(f, i=None, j=None, z=None, drop=True):
     """ Read one netcdf file

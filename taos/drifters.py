@@ -25,16 +25,26 @@ def update_config(file_in, file_out=None, overwrite=False, **params):
     if file_out is None:
         file_out = file_in.replace(".xml", "_new.xml")
 
+    _params = dict(**params)
+        
     tree = ET.parse(file_in)
     root = tree.getroot()
-
-    modified = {k: False for k in params}
+    
+    if "initial_time" in _params:
+        # need to update input paths
+        base_nc_path = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
+        year = _params["initial_time"].split()[1]
+        month = _params["initial_time"].split()[3]
+        _params["input_path"] = base_nc_path + year + "/"
+        _params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+month+"*.nc"
+                
+    modified = {k: False for k in _params}
 
     for p in root.iter("parameter"):
         for k in p.iter("key"):
-            if k.text in params:
+            if k.text in _params:
                 v = p.find("value")
-                v.text = str(params[k.text])
+                v.text = str(_params[k.text])
                 modified[k.text] = True
 
     assert all([b for k, b in modified.items()]), "One or several parameters were not modified"
@@ -44,6 +54,13 @@ def update_config(file_in, file_out=None, overwrite=False, **params):
         print("File {} has been generated".format(file_out))
     else:
         print("Nothing done")
+
+def format_date(date):
+    """ Format date for Ichthyop
+    """
+    if isinstance(date, str):
+        date = pd.Timestamp(date)
+    return date.strftime("year %Y month %m day %d at %H:%M")
 
 _default_ichthyop_path = os.path.join(os.getenv("HOME"),
                                       "ichthyop/target/",
@@ -115,12 +132,15 @@ class ichthy(object):
 
     def _create_job_files(self, ichthyop_path):
 
+        # RAM usage < 7GB
+        # elapse time = 7min for 10d run, extrapolate to 21min for 10d run
+        
         with open('job.pbs','w') as f:
             f.write('#!/bin/csh\n')
             f.write('#PBS -N '+self.jobname+'\n')
             f.write('#PBS -q sequentiel\n')
             f.write('#PBS -l mem=10g\n')
-            f.write('#PBS -l walltime=01:00:00\n')
+            f.write('#PBS -l walltime=00:30:00\n')
             f.write('\n')
             f.write('# cd to the directory you submitted your job\n')
             f.write('cd $PBS_O_WORKDIR\n')
