@@ -1,8 +1,14 @@
 import os, sys
 import shutil
 
-#from glob import glob
+from glob import glob
 import time
+
+import pandas as pd
+import xarray as xr
+
+from matplotlib import pyplot as plt
+import cartopy.crs as ccrs
 
 import xml.etree.ElementTree as ET
 
@@ -140,7 +146,7 @@ class ichthy(object):
             f.write('#PBS -N '+self.jobname+'\n')
             f.write('#PBS -q sequentiel\n')
             f.write('#PBS -l mem=10g\n')
-            f.write('#PBS -l walltime=00:30:00\n')
+            f.write('#PBS -l walltime=01:00:00\n')
             f.write('\n')
             f.write('# cd to the directory you submitted your job\n')
             f.write('cd $PBS_O_WORKDIR\n')
@@ -159,3 +165,74 @@ class ichthy(object):
         #os.chdir(join(self.rpath,'t1'))
         os.system('qsub job.pbs')
         os.chdir(self.startdir)
+
+        
+def load_run(run_dir):
+    """ Load one Ichthyop run
+    """
+    f = glob(os.path.join(run_dir, "output/taos*.nc"))
+    #assert len(f)==1, \
+    #    "Erroneous number of files ({}) in {}".format(len(f), run_dir)
+    if len(f)==0 or len(f)>1:
+        return None
+    ds = xr.open_dataset(f[0])
+    return ds
+
+def plot_trajectories(ds, 
+                      ax=None, 
+                      nmax=50, 
+                      dt=None, 
+                      track_color="0.5",
+                      ms=5,
+                      **kwargs,
+                     ):
+    """ Plot trajectories
+    
+    Parameters
+    ----------
+    ds: xr.Dataset
+        Ichthyop trajectories
+    ax: GeoAxesSubplot, optional
+        Existing cartopy axes plot
+    nmax: int, optional
+        Max number of trajectories to plot. Default: 50
+    dt: float, optional
+        Plot locations every dt days. Default: None
+    track_color: str, optional
+        Track color
+    ms: int
+        Marker size
+    **kwargs: other arguments passed to plotting methods
+    """
+
+    t_start = ds.time.isel(time=0)
+    t_end = ds.time.isel(time=-1)
+
+    opts = dict(**kwargs)
+    if ax is None:
+        fig, ax = plt.subplots(1,1, figsize=(10,10))
+    else:
+        fig=None
+        opts["transform"]=ccrs.PlateCarree()
+
+    dr = ds.drifter.values[:nmax]
+    for d in dr:
+        _ds = ds.sel(drifter=d)
+        ax.plot(_ds.lon, _ds.lat, lw=.5, color=track_color, **opts)
+
+
+    for d in dr:
+        _ds = ds.sel(drifter=d, time=t_start)
+        ax.plot(_ds.lon, _ds.lat, "o", ms=ms, color="orange", markeredgecolor="k", **opts)
+
+    if dt is not None:
+        _dt = pd.Timedelta(dt, unit="days")
+        t = t_start + _dt
+        while t<t_end:
+            #print(t.values)
+            for d in dr:
+                _ds = ds.sel(drifter=d, time=t)
+                ax.plot(_ds.lon, _ds.lat, "o", ms=ms, color="k", **opts)
+            t += _dt
+        
+    return fig, ax
