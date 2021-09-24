@@ -10,6 +10,7 @@ import threading
 from matplotlib import pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -90,6 +91,10 @@ def read_one_file(f, i=None, j=None, z=None, drop=True):
 def get_z(ds):
     # z(n,k,j,i) = eta(n,j,i)*(1+s(k)) + depth_c*s(k) + (depth(j,i)-depth_c)*C(k)
     eta, s, depth, depth_c, C  = ds.XE, ds.SIG, ds.H0, ds.hc, ds.Csu_sig
+    # fill land values with 0
+    eta = eta.fillna(0.)
+    depth = depth.fillna(1.)
+    depth_c = depth_c.fillna(0.)
     return eta*(1+s) + depth_c*s + (depth-depth_c)*C
 
 
@@ -152,6 +157,7 @@ def plot_bs(da,
             ax=None,
             colorbar=True,
             colorbar_kwargs={},
+            center_colormap=False,
             gridlines=True,
             dticks=(1, 1),
             land=True,
@@ -178,6 +184,12 @@ def plot_bs(da,
         if fig is None and ax is None:
             fig = plt.figure(figsize=_figsize)
             ax = fig.add_subplot(111, projection=ccrs.Orthographic(0., 49.5))
+        
+        if center_colormap:
+            vmax = float(abs(da).max())
+            vmin = -vmax
+            kwargs["vmin"] = vmin
+            kwargs["vmax"] = vmax        
         
         im = (da
              .squeeze()
@@ -214,9 +226,23 @@ def plot_bs(da,
             ax.set_extent(_extent)
         
         if colorbar:
-            cbar = fig.colorbar(im, extend="neither", shrink=0.7, **colorbar_kwargs)
+            #cbar = fig.colorbar(im, extend="neither", shrink=0.7, **colorbar_kwargs)
+            axins = inset_axes(ax,
+                   width="5%",  # width = 5% of parent_bbox width
+                   height="100%",  # height : 50%
+                   loc='lower left',
+                   bbox_to_anchor=(1.05, 0., 1, 1),
+                   bbox_transform=ax.transAxes,
+                   borderpad=0,
+                   )            
+            #cbar = fig.colorbar(im, extend="neither", shrink=0.9, 
+            cbar = fig.colorbar(im,
+                                extend="neither",
+                                cax=axins,
+                                **colorbar_kwargs)            
         else:
             cbar = None
+            
         if gridlines:
             gl = ax.gridlines(draw_labels=True, dms=False, 
                          x_inline=False, y_inline=False, 
@@ -233,3 +259,82 @@ def plot_bs(da,
         #
         return {"fig": fig, "ax": ax, "cbar": cbar}
 
+
+def plot_section(da,
+                 x,
+                 title=None,
+                 fig=None,
+                 ax=None,
+            colorbar=True,
+            colorbar_kwargs={},
+            center_colormap=False,
+            xlabel=True,
+            ylabel=True,
+            gridlines=True,
+            offline=False,
+            figsize=(10,4),
+            savefig=None,
+            **kwargs,
+           ):
+    """ Plot a vertical section
+    """
+    
+    #
+    MPL_LOCK = threading.Lock()
+    with MPL_LOCK:
+        
+        if offline:
+            plt.switch_backend("agg")
+        
+        if fig is None and ax is None:
+            fig = plt.figure(figsize=figsize)
+            ax = fig.add_subplot(111)
+            #ax.set_facecolor("slategray")
+            ax.set_facecolor("0.9")
+            
+        if center_colormap:
+            vmax = float(abs(da).max())
+            vmin = -vmax
+            kwargs["vmin"] = vmin
+            kwargs["vmax"] = vmax
+            
+        im=ax.pcolormesh(da.level*0.+da[x], da.z, da, 
+                         shading="gouraud", 
+                         **kwargs,
+                        )
+
+        ax.invert_xaxis()
+        ax.set_ylim(top=0.)
+        if not ylabel:
+            ax.set_yticklabels([])
+        if not xlabel:
+            ax.set_xticklabels([])
+        
+        if colorbar:
+            axins = inset_axes(ax,
+                   width="5%",  # width = 5% of parent_bbox width
+                   height="100%",  # height : 50%
+                   loc='lower left',
+                   bbox_to_anchor=(1.05, 0., 1, 1),
+                   bbox_transform=ax.transAxes,
+                   borderpad=0,
+                   )            
+            #cbar = fig.colorbar(im, extend="neither", shrink=0.9, 
+            cbar = fig.colorbar(im,
+                                extend="neither",
+                                cax=axins,
+                                **colorbar_kwargs)
+        else:
+            cbar = None
+        if gridlines:
+            ax.grid()
+
+        if title is not None:
+            ax.set_title(title, fontdict={"fontsize": 12, }) #"fontweight": "bold"
+        #
+        if savefig is not None:
+            fig.savefig(savefig, dpi=150) #bbox_inches = "tight"
+            plt.close(fig)
+        #
+        return {"fig": fig, "ax": ax, "cbar": cbar}
+    
