@@ -104,9 +104,9 @@ def get_z(ds):
 def add_eos(ds, S="SAL", PT="TEMP"):
     assert "z" in ds, "You must first add the vertical coordinate z with get_z"
     lon, lat = 0, 49.5
-    ds["SA"] = (ds[S].dims, gsw.SA_from_SP(ds[S], -ds.z, lon, lat))
-    ds["CT"] = (ds[S].dims, gsw.CT_from_pt(ds[S], ds[PT]))
-    ds["sigma0"] = (ds[S].dims, gsw.sigma0(ds[S], ds[PT]))
+    ds["SA"] = (ds[S].dims, gsw.SA_from_SP(ds[S].data, -ds.z.data, lon, lat))
+    ds["CT"] = (ds[S].dims, gsw.CT_from_pt(ds[S].data, ds[PT].data))
+    ds["sigma0"] = (ds[S].dims, gsw.sigma0(ds[S].data, ds[PT].data))
     return ds
 
 def TS_plot(ds, t_range=None, s_range=None, figsize=(5, 5)):

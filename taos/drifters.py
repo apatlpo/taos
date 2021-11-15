@@ -12,7 +12,7 @@ import cartopy.crs as ccrs
 
 import xml.etree.ElementTree as ET
 
-def update_config(file_in, file_out=None, overwrite=False, **params):
+def update_config(file_in, file_out=None, overwrite=False, verbose=True, **params):
     """ Modify an Ichthyop xml input file
 
     Parameters
@@ -40,9 +40,11 @@ def update_config(file_in, file_out=None, overwrite=False, **params):
         # need to update input paths
         base_nc_path = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
         year = _params["initial_time"].split()[1]
-        month = _params["initial_time"].split()[3]
+        #month = _params["initial_time"].split()[3]
         _params["input_path"] = base_nc_path + year + "/"
-        _params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+month+"*.nc"
+        #_params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+month+"*.nc"
+        _params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+"*.nc"
+        
                 
     modified = {k: False for k in _params}
 
@@ -57,7 +59,8 @@ def update_config(file_in, file_out=None, overwrite=False, **params):
 
     if overwrite or not os.path.isfile(file_out):
         tree.write(file_out)
-        print("File {} has been generated".format(file_out))
+        if verbose:
+            print("File {} has been generated".format(file_out))
     else:
         print("Nothing done")
 
@@ -88,11 +91,16 @@ class ichthy(object):
         Launch simulation, default is True
     ichthyop_path: str, optional
         Path to jar executable
+    cfg: dict, optional
+        Parameters used to update the configuration file
+    configurations: dict, optional
+        Dict of different configurations (dict analogous to cfg) to be launched at once.
+        Keys are used for simulations names
     """
 
     def __init__(self,
                  rundir,
-                 jobname='icht',
+                 jobname="icht",
                  workdir=None,
                  launch=True,
                  ichthyop_path=None,
@@ -102,14 +110,14 @@ class ichthy(object):
         self.startdir = os.getcwd()
         #
         if workdir is None:
-            self.workdir = os.getenv('SCRATCH')
+            self.workdir = os.getenv("SCRATCH")
         elif not os.path.isdir(workdir):
             self.workdir = os.getenv(workdir)
         else:
             self.workdir = workdir
         # main directory where the simulation will be run:
         self.rpath = os.path.join(self.workdir, rundir)
-        print('Run will be stored in {}'.format(self.rpath))
+        print("Run will be stored in {}".format(self.rpath))
         self._create_rpath()
         # change input parameters
         self.update_cfg_file(**params)
@@ -125,7 +133,7 @@ class ichthy(object):
 
     def _create_rpath(self):
         if os.path.exists(self.rpath) :
-            os.system('rm -Rf '+self.rpath)
+            os.system("rm -Rf "+self.rpath)
         os.mkdir(self.rpath)
         # move to run dir
         os.chdir(self.rpath)
@@ -141,31 +149,144 @@ class ichthy(object):
         # RAM usage < 7GB
         # elapse time = 7min for 10d run, extrapolate to 21min for 10d run
         
-        with open('job.pbs','w') as f:
-            f.write('#!/bin/csh\n')
-            f.write('#PBS -N '+self.jobname+'\n')
-            f.write('#PBS -q sequentiel\n')
-            f.write('#PBS -l mem=10g\n')
-            f.write('#PBS -l walltime=01:00:00\n')
-            f.write('\n')
-            f.write('# cd to the directory you submitted your job\n')
-            f.write('cd $PBS_O_WORKDIR\n')
-            f.write('\n')
-            f.write('setenv PATH ${HOME}/.miniconda3/envs/ichthy/bin:${PATH}\n')
-            f.write('\n')
-            f.write('date\n')
-            f.write('java -jar {} cfg.xml\n'.format(ichthyop_path))
-            f.write('\n')
-            f.write('date\n')
+        with open("job.pbs","w") as f:
+            f.write("#!/bin/csh\n")
+            f.write("#PBS -N "+self.jobname+"\n")
+            f.write("#PBS -q sequentiel\n")
+            f.write("#PBS -l mem=10g\n")
+            f.write("#PBS -l walltime=01:00:00\n")
+            f.write("\n")
+            f.write("# cd to the directory you submitted your job\n")
+            f.write("cd $PBS_O_WORKDIR\n")
+            f.write("\n")
+            f.write("setenv PATH ${HOME}/.miniconda3/envs/ichthy/bin:${PATH}\n")
+            f.write("\n")
+            f.write("date\n")
+            f.write("java -jar {} cfg.xml\n".format(ichthyop_path))
+            f.write("\n")
+            f.write("date\n")
 
     def launch(self):
         """ Launch simulations
         """
         time.sleep(1)
-        #os.chdir(join(self.rpath,'t1'))
-        os.system('qsub job.pbs')
+        #os.chdir(join(self.rpath,"t1"))
+        os.system("qsub job.pbs")
         os.chdir(self.startdir)
 
+
+class ichthys(object):
+    """ Object to automate the launch of multiple ichthyop runs
+
+    Parameters
+    ----------
+    dir_suffix: str
+        Base name of the run directories
+    configurations: dict
+        Dict of different configurations (dict analogous to cfg) to be launched at once.
+        Keys are used for simulations names
+    jobname: str, optional
+        Base name of the PBS job
+    workdir: str, optional
+        Path to the working directory, default to scratch
+    launch: boolean, optional
+        Launch simulations, default is True
+    ichthyop_path: str, optional
+        Path to jar executable
+    """
+
+    def __init__(self,
+                 dir_suffix,
+                 configurations,
+                 jobname="icht",
+                 workdir=None,
+                 launch=True,
+                 ichthyop_path=None,
+                 ):
+        #
+        self.startdir = os.getcwd()
+        #
+        self.dir_suffix = dir_suffix
+        if workdir is None:
+            self.workdir = os.getenv("SCRATCH")
+        elif not os.path.isdir(workdir):
+            self.workdir = os.getenv(workdir)
+        else:
+            self.workdir = workdir
+        # build directories where simulations will be run:
+        self.rpath = {c: os.path.join(self.workdir, dir_suffix+c) for c in configurations}
+        # main directory where the simulation will be run:
+        #print("Run will be stored in {}".format(self.rpath))
+        for c, d in self.rpath.items():
+            self._create_rpath(d)
+        # change input parameters
+        self.update_cfg_files(configurations)
+        # move to work dir
+        os.chdir(self.workdir)
+        # guess config if necessary and create job files
+        self.jobname = jobname
+        if ichthyop_path is None:
+            ichthyop_path = _default_ichthyop_path
+        self._create_job_files(ichthyop_path)
+        # launch runs
+        if launch:
+            self.launch()
+        os.chdir(self.startdir)
+
+    def _create_rpath(self, rpath):
+        if os.path.exists(rpath) :
+            os.system("rm -Rf "+rpath)
+        os.mkdir(rpath)
+        # move to run dir
+        #os.chdir(self.rpath)
+
+    def update_cfg_files(self, configurations):
+        """ Update config
+        """
+        cfg_in = os.path.join(self.startdir, "taos_mars3d.xml")
+        for c, cfg in configurations.items():
+            fout = os.path.join(self.rpath[c], "cfg.xml")
+            update_config(cfg_in, file_out=fout, overwrite=True, verbose=False, **cfg)
+
+    def _create_job_files(self, ichthyop_path):
+
+        # RAM usage < 7GB
+        # elapse time = 7min for 10d run, extrapolate to 21min for 10d run
+        
+        elapse_one_simulation = 1 # in hours
+        elapse_total = len(self.rpath)*elapse_one_simulation
+        
+        self.job = self.dir_suffix+"job.pbs"
+        with open(self.job, "w") as f:
+            f.write("#!/bin/csh\n")
+            f.write("#PBS -N "+self.jobname+"\n")
+            f.write("#PBS -q sequentiel\n")
+            f.write("#PBS -l mem=10g\n")
+            f.write("#PBS -l walltime={}:00:00\n".format(elapse_total))
+            f.write("\n")
+            #f.write("# cd to the directory you submitted your job\n")
+            #f.write("cd $PBS_O_WORKDIR\n")
+            #f.write("\n")
+            f.write("setenv PATH ${HOME}/.miniconda3/envs/ichthy/bin:${PATH}\n")
+            f.write("date\n")
+            f.write("\n")
+            for c, rpath in self.rpath.items():
+                f.write("# cd to the directory you submitted your job\n")
+                f.write("cd "+rpath+" \n")
+                f.write("java -jar {} cfg.xml\n".format(ichthyop_path))
+                f.write("date\n")
+                f.write("touch "+os.path.join(rpath, "done")+" \n" )
+                f.write("\n")
+
+    def launch(self):
+        """ Launch simulations
+        """
+        time.sleep(1)
+        os.system("qsub "+self.job)
+        os.chdir(self.startdir)
+
+        
+# -------------------------------- post-processing --------------------------------------------
         
 def load_run(run_dir):
     """ Load one Ichthyop run
@@ -176,6 +297,8 @@ def load_run(run_dir):
     if len(f)==0 or len(f)>1:
         return None
     ds = xr.open_dataset(f[0])
+    # test if "done" flag file is present (means the job executed normaly on the pbs side)
+    ds.attrs["done"] = os.path.isfile(os.path.join(run_dir, "done"))
     return ds
 
 def plot_trajectories(ds, 
