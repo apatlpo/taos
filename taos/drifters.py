@@ -12,6 +12,58 @@ import cartopy.crs as ccrs
 
 import xml.etree.ElementTree as ET
 
+from functools import reduce
+
+_default_ichthyop_path = os.path.join(os.getenv("HOME"),
+                                      "ichthyop/target/",
+                                      "ichthyop-3.3.10-jar-with-dependencies.jar",
+                                      )
+
+_root_nc_path = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
+
+def _get_input_files(params):
+    """ Return a dataframe with the path to required input files
+    given simulation parameters
+    """
+    # extract time line from Parameters
+    itime = params["initial_time"]
+    for s in ["year", "month", "day", "at"]:
+        itime = itime.replace(s, "")
+    itime = pd.Timestamp(itime)
+    delt = pd.Timedelta(params["transport_duration"].replace("(s)",""))
+    hour = pd.Timedelta("1H")
+    times = pd.date_range(itime-2*hour, itime+delt+2*hour,freq="1H")
+    # build list of input file paths
+    df = times.to_frame()
+    df["dir"] = df.index.map(lambda t: os.path.join(_root_nc_path, str(t.year)))
+    df["file"] = df.index.map(lambda t: t.strftime("MARC_F1-MARS3D-SEINE_%Y%m%dT%H%MZ.nc"))
+    df = df.drop(columns=0)
+    return df
+    
+def prepare_input_links(params, rpath=None, input_path=None):
+    """ generates an input dir with symbolic links to original file
+    """
+    if isinstance(params, dict):
+        df = _get_input_files(params)
+    elif isinstance(params, list):
+        df = reduce(lambda  left,right: pd.merge(left,right, how='outer'),
+                    [_get_input_files(p) for p in params],
+                   )
+    # create symbolic links
+    if rpath is not None:
+        bpath = os.path.join(rpath, "inputs")
+    elif input_path is not None:
+        bpath = input_path
+    os.mkdir(bpath)
+    for t, row in df.iterrows():
+        subprocess.run(["ln", "-s",
+                        os.path.join(row["dir"], row["file"]),
+                        os.path.join(bpath, row["file"])
+                        ],
+                       check=True
+                       )
+    return bpath
+
 def update_config(file_in,
                   file_out=None,
                   overwrite=False,
@@ -43,15 +95,8 @@ def update_config(file_in,
 
     if base_nc_path is None:
         # need to update input paths
-        #base_nc_path = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
         base_nc_path = "/home/datawork-lops-osi/aponte/taos/ichthy/MARC_F1-MARS3D-SEINE/"
-    #base_nc_path = "/home/datawork-lops-osi/aponte/taos/ichthy/MARC_F1-MARS3D-SEINE-TMP/" # tmp test
-    #year = _params["initial_time"].split()[1]
-    #month = _params["initial_time"].split()[3]
-    #_params["input_path"] = base_nc_path + year + "/"
-    _params["input_path"] = base_nc_path #+ "/"
-    #_params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+month+"*.nc"
-    #_params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+"*.nc"
+    _params["input_path"] = base_nc_path
     _params["file_filter"] = "MARC_F1-MARS3D-SEINE_*.nc"
 
     modified = {k: False for k in _params}
@@ -78,13 +123,6 @@ def format_date(date):
     if isinstance(date, str):
         date = pd.Timestamp(date)
     return date.strftime("year %Y month %m day %d at %H:%M")
-
-_default_ichthyop_path = os.path.join(os.getenv("HOME"),
-                                      "ichthyop/target/",
-                                      "ichthyop-3.3.10-jar-with-dependencies.jar",
-                                      )
-
-_root_nc_path = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
 
 class ichthy(object):
     """ Object to automate Ichthyop run launchings
@@ -129,7 +167,7 @@ class ichthy(object):
         self.rpath = os.path.join(self.workdir, rundir)
         print("Run will be stored in {}".format(self.rpath))
         self._create_rpath()
-        self._prepare_input_files(params)
+        self.base_nc_path = prepare_input_links(params, rpath=self.rpath)
         # change input parameters
         self.update_cfg_file(**params)
         # guess config if necessary and create job files
@@ -149,32 +187,6 @@ class ichthy(object):
         # move to run dir
         os.chdir(self.rpath)
 
-    def _prepare_input_files(self, params):
-        # extract time line from Parameters
-        itime = params["initial_time"]
-        for s in ["year", "month", "day", "at"]:
-            itime = itime.replace(s, "")
-        itime = pd.Timestamp(itime)
-        delt = pd.Timedelta(params["transport_duration"].replace("(s)",""))
-        hour = pd.Timedelta("1H")
-        times = pd.date_range(itime-2*hour, itime+delt+2*hour,freq="1H")
-        # build list of input file paths
-        df = times.to_frame()
-        df["dir"] = df.index.map(lambda t: os.path.join(_root_nc_path, str(t.year)))
-        df["file"] = df.index.map(lambda t: t.strftime("MARC_F1-MARS3D-SEINE_%Y%m%dT%H%MZ.nc"))
-        #df = df.drop(columns=0)
-        # create symbolic links
-        _bpath = os.path.join(self.rpath, "inputs")
-        os.mkdir(_bpath)
-        self.base_nc_path = _bpath
-        for t, row in df.iterrows():
-            subprocess.run(["ln", "-s",
-                            os.path.join(row["dir"], row["file"]),
-                            os.path.join(_bpath, row["file"])
-                            ],
-                           check=True
-                           )
-
     def update_cfg_file(self, **params):
         """ Update config
         """
@@ -183,7 +195,8 @@ class ichthy(object):
                       file_out="cfg.xml",
                       overwrite=True,
                       base_nc_path=self.base_nc_path,
-                      **params)
+                      **params,
+                     )
 
     def _create_job_files(self, ichthyop_path):
 
@@ -260,6 +273,9 @@ class ichthys(object):
         #print("Run will be stored in {}".format(self.rpath))
         for c, d in self.rpath.items():
             self._create_rpath(d)
+        self.base_nc_path = prepare_input_links([cfg for c, cfg in configurations.items()],
+                                                input_path=os.path.join(self.workdir, dir_suffix+"inputs"),
+                                               )
         # change input parameters
         self.update_cfg_files(configurations)
         # move to work dir
@@ -287,7 +303,13 @@ class ichthys(object):
         cfg_in = os.path.join(self.startdir, "taos_mars3d.xml")
         for c, cfg in configurations.items():
             fout = os.path.join(self.rpath[c], "cfg.xml")
-            update_config(cfg_in, file_out=fout, overwrite=True, verbose=False, **cfg)
+            update_config(cfg_in, 
+                          file_out=fout, 
+                          overwrite=True, 
+                          verbose=False, 
+                          base_nc_path=self.base_nc_path,
+                          **cfg,
+                         )
 
     def _create_job_files(self, ichthyop_path):
 
