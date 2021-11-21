@@ -535,7 +535,7 @@
       <parameter>
         <key>age_max</key>
         <long_name>Maximum age [day]</long_name>
-        <value>10.0</value>
+        <value>1000.0</value>
         <format>float</format>
         <default>3.0</default>
         <description>Maximum age [day] for adding buoyancy effect to the particle. If the growth process is activated (see  Biology/Growth), this parameter is ignored by the application and the buoyancy only operates during the egg stage.</description>

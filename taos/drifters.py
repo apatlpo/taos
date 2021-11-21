@@ -38,12 +38,16 @@ def update_config(file_in, file_out=None, overwrite=False, verbose=True, **param
     
     if "initial_time" in _params:
         # need to update input paths
-        base_nc_path = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
-        year = _params["initial_time"].split()[1]
+        #base_nc_path = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
+        base_nc_path = "/home/datawork-lops-osi/aponte/taos/ichthy/MARC_F1-MARS3D-SEINE/"
+        #base_nc_path = "/home/datawork-lops-osi/aponte/taos/ichthy/MARC_F1-MARS3D-SEINE-TMP/" # tmp test
+        #year = _params["initial_time"].split()[1]
         #month = _params["initial_time"].split()[3]
-        _params["input_path"] = base_nc_path + year + "/"
+        #_params["input_path"] = base_nc_path + year + "/"
+        _params["input_path"] = base_nc_path #+ "/"
         #_params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+month+"*.nc"
-        _params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+"*.nc"
+        #_params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+"*.nc"
+        _params["file_filter"] = "MARC_F1-MARS3D-SEINE_*.nc"
         
                 
     modified = {k: False for k in _params}
@@ -288,7 +292,7 @@ class ichthys(object):
         
 # -------------------------------- post-processing --------------------------------------------
         
-def load_run(run_dir):
+def load_run_simple(run_dir):
     """ Load one Ichthyop run
     """
     f = glob(os.path.join(run_dir, "output/taos*.nc"))
@@ -300,6 +304,12 @@ def load_run(run_dir):
     # test if "done" flag file is present (means the job executed normaly on the pbs side)
     ds.attrs["done"] = os.path.isfile(os.path.join(run_dir, "done"))
     return ds
+
+def normalize_time(ds):
+    ds["date"] = ds["time"]
+    ds["time"] = (ds.time - ds.time[0])/pd.Timedelta("1D")
+    return ds
+
 
 def plot_trajectories(ds, 
                       ax=None, 
