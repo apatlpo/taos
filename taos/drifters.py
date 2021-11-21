@@ -1,7 +1,7 @@
 import os, sys
 import shutil
-
 from glob import glob
+import subprocess
 import time
 
 import pandas as pd
@@ -12,7 +12,12 @@ import cartopy.crs as ccrs
 
 import xml.etree.ElementTree as ET
 
-def update_config(file_in, file_out=None, overwrite=False, verbose=True, **params):
+def update_config(file_in,
+                  file_out=None,
+                  overwrite=False,
+                  base_nc_path=None,
+                  verbose=True,
+                  **params):
     """ Modify an Ichthyop xml input file
 
     Parameters
@@ -32,24 +37,23 @@ def update_config(file_in, file_out=None, overwrite=False, verbose=True, **param
         file_out = file_in.replace(".xml", "_new.xml")
 
     _params = dict(**params)
-        
+
     tree = ET.parse(file_in)
     root = tree.getroot()
-    
-    if "initial_time" in _params:
+
+    if base_nc_path is None:
         # need to update input paths
         #base_nc_path = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
         base_nc_path = "/home/datawork-lops-osi/aponte/taos/ichthy/MARC_F1-MARS3D-SEINE/"
-        #base_nc_path = "/home/datawork-lops-osi/aponte/taos/ichthy/MARC_F1-MARS3D-SEINE-TMP/" # tmp test
-        #year = _params["initial_time"].split()[1]
-        #month = _params["initial_time"].split()[3]
-        #_params["input_path"] = base_nc_path + year + "/"
-        _params["input_path"] = base_nc_path #+ "/"
-        #_params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+month+"*.nc"
-        #_params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+"*.nc"
-        _params["file_filter"] = "MARC_F1-MARS3D-SEINE_*.nc"
-        
-                
+    #base_nc_path = "/home/datawork-lops-osi/aponte/taos/ichthy/MARC_F1-MARS3D-SEINE-TMP/" # tmp test
+    #year = _params["initial_time"].split()[1]
+    #month = _params["initial_time"].split()[3]
+    #_params["input_path"] = base_nc_path + year + "/"
+    _params["input_path"] = base_nc_path #+ "/"
+    #_params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+month+"*.nc"
+    #_params["file_filter"] = "*MARC_F1-MARS3D-SEINE_"+year+"*.nc"
+    _params["file_filter"] = "MARC_F1-MARS3D-SEINE_*.nc"
+
     modified = {k: False for k in _params}
 
     for p in root.iter("parameter"):
@@ -79,6 +83,8 @@ _default_ichthyop_path = os.path.join(os.getenv("HOME"),
                                       "ichthyop/target/",
                                       "ichthyop-3.3.10-jar-with-dependencies.jar",
                                       )
+
+_root_nc_path = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
 
 class ichthy(object):
     """ Object to automate Ichthyop run launchings
@@ -123,6 +129,7 @@ class ichthy(object):
         self.rpath = os.path.join(self.workdir, rundir)
         print("Run will be stored in {}".format(self.rpath))
         self._create_rpath()
+        self._prepare_input_files(params)
         # change input parameters
         self.update_cfg_file(**params)
         # guess config if necessary and create job files
@@ -142,17 +149,47 @@ class ichthy(object):
         # move to run dir
         os.chdir(self.rpath)
 
+    def _prepare_input_files(self, params):
+        # extract time line from Parameters
+        itime = params["initial_time"]
+        for s in ["year", "month", "day", "at"]:
+            itime = itime.replace(s, "")
+        itime = pd.Timestamp(itime)
+        delt = pd.Timedelta(params["transport_duration"].replace("(s)",""))
+        hour = pd.Timedelta("1H")
+        times = pd.date_range(itime-2*hour, itime+delt+2*hour,freq="1H")
+        # build list of input file paths
+        df = times.to_frame()
+        df["dir"] = df.index.map(lambda t: os.path.join(_root_nc_path, str(t.year)))
+        df["file"] = df.index.map(lambda t: t.strftime("MARC_F1-MARS3D-SEINE_%Y%m%dT%H%MZ.nc"))
+        #df = df.drop(columns=0)
+        # create symbolic links
+        _bpath = os.path.join(self.rpath, "inputs")
+        os.mkdir(_bpath)
+        self.base_nc_path = _bpath
+        for t, row in df.iterrows():
+            subprocess.run(["ln", "-s",
+                            os.path.join(row["dir"], row["file"]),
+                            os.path.join(_bpath, row["file"])
+                            ],
+                           check=True
+                           )
+
     def update_cfg_file(self, **params):
         """ Update config
         """
         cfg_in = os.path.join(self.startdir, "taos_mars3d.xml")
-        update_config(cfg_in, file_out="cfg.xml", overwrite=True, **params)
+        update_config(cfg_in,
+                      file_out="cfg.xml",
+                      overwrite=True,
+                      base_nc_path=self.base_nc_path,
+                      **params)
 
     def _create_job_files(self, ichthyop_path):
 
         # RAM usage < 7GB
         # elapse time = 7min for 10d run, extrapolate to 21min for 10d run
-        
+
         with open("job.pbs","w") as f:
             f.write("#!/bin/csh\n")
             f.write("#PBS -N "+self.jobname+"\n")
@@ -256,10 +293,10 @@ class ichthys(object):
 
         # RAM usage < 7GB
         # elapse time = 7min for 10d run, extrapolate to 21min for 10d run
-        
+
         elapse_one_simulation = 1 # in hours
         elapse_total = len(self.rpath)*elapse_one_simulation
-        
+
         self.job = self.dir_suffix+"job.pbs"
         with open(self.job, "w") as f:
             f.write("#!/bin/csh\n")
@@ -289,9 +326,9 @@ class ichthys(object):
         os.system("qsub "+self.job)
         os.chdir(self.startdir)
 
-        
+
 # -------------------------------- post-processing --------------------------------------------
-        
+
 def load_run_simple(run_dir):
     """ Load one Ichthyop run
     """
@@ -311,16 +348,16 @@ def normalize_time(ds):
     return ds
 
 
-def plot_trajectories(ds, 
-                      ax=None, 
-                      nmax=50, 
-                      dt=None, 
+def plot_trajectories(ds,
+                      ax=None,
+                      nmax=50,
+                      dt=None,
                       track_color="0.5",
                       ms=5,
                       **kwargs,
                      ):
     """ Plot trajectories
-    
+
     Parameters
     ----------
     ds: xr.Dataset
@@ -367,5 +404,5 @@ def plot_trajectories(ds,
                 _ds = ds.sel(drifter=d, time=t)
                 ax.plot(_ds.lon, _ds.lat, "o", ms=ms, color="k", **opts)
             t += _dt
-        
+
     return fig, ax
