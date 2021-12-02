@@ -45,6 +45,7 @@ daskf.pbs
 dask-worker*
 dask-scheduler*
 jlab.pbs.o*
+*.pbs.o*
 *.log
 *.nodefile
 

@@ -21,26 +21,35 @@ import cmocean.cm as cm
 import gsw
 
 
+diag_dir = "/home/datawork-lops-osi/aponte/taos/mars"
+
 # -----------------------------
 
-def browse_files(year=None):
+def browse_files(year=None, daily=False):
     """ Browse simulation directory and figure out output files
     """
-    root_dir = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
+    if daily:
+        root_dir = "/home/datawork-lops-oc/MARC/MARC_F1-MARS3D-SEINE_FILTRE/"
+    else:
+        root_dir = "/home/ref-oc-public/modeles_marc/f1_e2500_agrif/MARC_F1-MARS3D-SEINE/best_estimate/"
     suff = "MARC_F1-"
     if year is not None:
         dpath = os.path.join(root_dir, str(year), suff+"*.nc")
     else:
         dpath = os.path.join(root_dir, "*/"+suff+"*.nc")
     files = sorted(glob(dpath))
-    dates = [extract_date(f) for f in files]
+    dates = [extract_date(f, daily) for f in files]
     df = pd.DataFrame({"files": files}, index=dates)
     return df
 
-def extract_date(f):
+def extract_date(f, daily):
     """ extract date from file name
     """
-    _date = f.split("/")[-1].split("_")[-1].replace(".nc","")
+    if daily:
+        # MARC_F1-MARS3D-SEINE_20100702T1200Z_FILTRE.nc
+        _date = f.split("/")[-1].split("_")[-2].replace(".nc","")
+    else:
+        _date = f.split("/")[-1].split("_")[-1].replace(".nc","")
     return pd.Timestamp(_date)
 
 def load_date(date):
@@ -97,7 +106,24 @@ def get_z(ds):
     depth_c = depth_c.fillna(0.)
     return eta*(1+s) + depth_c*s + (depth-depth_c)*C
 
-
+def get_horizontal_indices(ds, lon=-.6, lat=49.7):
+    """ returns grid index of a position
+    
+    Parameters
+    ----------
+    ds: xr.Dataset
+        dataset containing grid information ("longitude", "longitude_u", ...)
+    lon, lat: float, optional
+        Coordinate of the point of interest, default: lon=-.6, lat=49.7
+    """
+    coords = {}
+    for v, suffix in zip(["rho", "u", "v"], ["","_u","_v"]):
+        dl2 = (ds["longitude"+suffix]-lon)**2 *np.sin(np.pi/180.*lat)**2 \
+            +(ds["latitude"+suffix]-lat)**2
+        _min = dl2.where(dl2==dl2.min(), drop=True)
+        coords[v] = {c:_min[c].values[0] for c in _min.dims}
+    coords["position"] = (lon, lat)
+    return coords
 
 # -----------------------------
 

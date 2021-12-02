@@ -4,11 +4,14 @@ from glob import glob
 import subprocess
 import time
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
 from matplotlib import pyplot as plt
 import cartopy.crs as ccrs
+
+from xhistogram.xarray import histogram
 
 import xml.etree.ElementTree as ET
 
@@ -256,6 +259,7 @@ class ichthys(object):
                  workdir=None,
                  launch=True,
                  ichthyop_path=None,
+                 overwrite=False,
                  ):
         #
         self.startdir = os.getcwd()
@@ -268,16 +272,13 @@ class ichthys(object):
         else:
             self.workdir = workdir
         # build directories where simulations will be run:
-        self.rpath = {c: os.path.join(self.workdir, dir_suffix+c) for c in configurations}
-        # main directory where the simulation will be run:
-        #print("Run will be stored in {}".format(self.rpath))
-        for c, d in self.rpath.items():
-            self._create_rpath(d)
-        self.base_nc_path = prepare_input_links([cfg for c, cfg in configurations.items()],
-                                                input_path=os.path.join(self.workdir, dir_suffix+"inputs"),
-                                               )
+        flag = self._create_rpath(dir_suffix, configurations, overwrite)
+        if not flag:
+            # exit if nothing has to be done
+            #print(dir_suffix+": nothing to be done")
+            return
         # change input parameters
-        self.update_cfg_files(configurations)
+        self.update_cfg_files()
         # move to work dir
         os.chdir(self.workdir)
         # guess config if necessary and create job files
@@ -290,18 +291,31 @@ class ichthys(object):
             self.launch()
         os.chdir(self.startdir)
 
-    def _create_rpath(self, rpath):
-        if os.path.exists(rpath) :
-            os.system("rm -Rf "+rpath)
-        os.mkdir(rpath)
-        # move to run dir
-        #os.chdir(self.rpath)
+    def _create_rpath(self, dir_suffix, configurations, overwrite):
+        self.rpath={}
+        for c in configurations:
+            rpath = os.path.join(self.workdir, dir_suffix+c)
+            if not os.path.exists(rpath) or overwrite:
+                self.rpath[c] = rpath
+        if not self.rpath:
+            return False
+        self.configurations = {c: configurations[c] for c in self.rpath}
+        # main directory where the simulation will be run:
+        for c, rpath in self.rpath.items():
+            if os.path.exists(rpath) :
+                os.system("rm -Rf "+rpath)
+            os.mkdir(rpath)
+        input_path = os.path.join(self.workdir, dir_suffix+"inputs")
+        self.base_nc_path = prepare_input_links([cfg for c, cfg in self.configurations.items()],
+                                                input_path=input_path,
+                                               )
+        return True
 
-    def update_cfg_files(self, configurations):
+    def update_cfg_files(self):
         """ Update config
         """
         cfg_in = os.path.join(self.startdir, "taos_mars3d.xml")
-        for c, cfg in configurations.items():
+        for c, cfg in self.configurations.items():
             fout = os.path.join(self.rpath[c], "cfg.xml")
             update_config(cfg_in, 
                           file_out=fout, 
@@ -428,3 +442,122 @@ def plot_trajectories(ds,
             t += _dt
 
     return fig, ax
+
+def bin_geographically(ds, 
+                       dl=2e3,
+                       dims=["date_start", "drifter"], 
+                       persist=True,
+                      ):
+    """ Bin locations geographically
+    
+    Parameters
+    ----------
+    ds: xr.Dataset
+        contains lon, lat
+    dl: float
+        bin size in meters
+    dims: list of str
+        Dimensions to bin over
+    persist: boolean
+        Flag in order to bin data
+    """
+    
+    edges = ds.region_edge
+    for v in ["date_start", "lat_start"]:
+        if v in edges.dims:
+            edges = edges.isel(**{v: 0})
+    #edges = ds.region_edge.isel(date_start=0, lat_start=0)
+    _lat = edges[:,0]
+    _lon = edges[:,1]
+        
+    dla = 111e3
+    dlo = float(dla*np.cos(np.pi/180*_lat.mean()))
+
+    lon_bins = np.arange(_lon.min()-dl/dlo, _lon.max()+dl/dlo, dl/dlo)
+    lat_bins = np.arange(_lat.min()-dl/dla, _lat.max()+dl/dla, dl/dla)
+
+    h = histogram(ds.lon, ds.lat, bins=[lon_bins, lat_bins], 
+                  dim=dims)
+    
+    if persist:
+        h = h.persist()
+        
+    return h
+
+def bin_displacements(dx, dy, 
+                     dl_step=500, 
+                     dl_max=20e3,
+                     dims=["date_start", "drifter"], 
+                     persist=True,
+                    ):
+    """ Bin displacements in two direction
+    
+    Parameters
+    ----------
+    dx, dy: xr.Dataarray
+        horizontal displacements
+    dl_step: float
+        bin size in meters
+    dl_max: float
+        max displacement considered
+    dims: list of str
+        dimensions to bin over
+    persist: boolean
+        flag to persist data
+    """
+    x_bins = np.arange(-dl_max, dl_max, dl_step)
+    y_bins = np.arange(-dl_max, dl_max, dl_step)
+
+    h = (histogram(dx, dy, bins=[x_bins, y_bins],
+                   dim=dims,
+                   density=True,                   
+                  )
+        )    
+    
+    if persist:
+        h = h.persist()
+        
+    return h
+
+
+def bin_displacement(dl,
+                     dl_step=500, 
+                     dl_max=20e3,
+                     dims=["date_start", "drifter"], 
+                     persist=True,
+                    ):
+    """ Bin displacement (distance)
+    
+    Parameters
+    ----------
+    dx, dy: xr.Dataarray
+        horizontal displacements
+    dl_step: float
+        bin size in meters
+    dl_max: float
+        max displacement considered
+    dims: list of str
+        dimensions to bin over
+    persist: boolean
+        flag to persist data
+    """
+    dl_bins = np.arange(0., dl_max, dl_step)
+
+    h = (histogram(dl, bins=[dl_bins,], 
+               dim=dims,
+               density=True,
+              )
+         .rename("density")
+        )
+    ds = h.to_dataset()
+
+    dim = dl.name+"_bin"
+    ds["mean"] = (h*h[dim]).integrate(dim)
+    ds["cum"] = h.cumulative_integrate(dim)
+    # bad form: ensures cum finishes at 1:
+    ds["cum"] = ds["cum"]/ds["cum"].isel(**{dim: -1})
+    
+    if persist:
+        ds = ds.persist()
+        
+    return ds
