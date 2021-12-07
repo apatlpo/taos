@@ -20,6 +20,7 @@ import cmocean.cm as cm
 
 import gsw
 
+from xgcm import Grid
 
 diag_dir = "/home/datawork-lops-osi/aponte/taos/mars"
 
@@ -76,30 +77,75 @@ def load_date(date):
 
     return ds
 
-def read_one_file(f, i=None, j=None, z=None, drop=True):
-    """ Read one netcdf file
+def read_one_file(f, 
+                  i=None, 
+                  j=None, 
+                  z=True, 
+                  eos=True,
+                  drop=True,
+                  chunks={"level": 1}
+                 ):
+    """ Read one netcdf mars file
+    
+    Parameters
+    ----------
+    f: str
+        path to netcdf file
+    i, j: int
+        index for slicing along i or j directions
+    z: boolean, True by default
+        add depth coordinate
+    eos: boolean, True by default
+        add equations of station variables
+    drop; boolean, True by default
+        drops variables that are not in all netcdf files
     """
     
-    ds = xr.open_dataset(f, chunks={"level": 1})
+    ds = xr.open_dataset(f, chunks=chunks)
+    ds = _rename_dims(ds)
     
     if i is not None:
         ds = ds.isel(ni=i)
     if j is not None:
         ds = ds.isel(nj=j)
         
-    if z is not None:
+    if z:
         ds = ds.assign_coords(z = get_z(ds))
+
+    ds = ds.transpose("time", "level", "nj", "nj_v", "ni", "ni_u")    
+
+    if eos:
+        ds = add_eos(ds)
         
     if drop is True or isinstance(drop, list):
         drop_vars = ["adapt_imp_ts", "adapt_imp_uz", "adapt_imp_vz"]
         if isinstance(drop, list):
             drop_vars = drop
         ds = ds.drop_vars(drop_vars, errors="ignore")
+    
     return ds
 
-def get_z(ds):
+def _rename_dims(ds):
+    """ Some dimensions are not necessary and may complicate the use of xgcm
+    """
+    ds = ds.copy()
+    for v in ds.reset_coords():
+        if "ni_v" in ds[v].dims:
+            ds[v] = ds[v].rename(ni_v="ni")
+        if "nj_u" in ds[v].dims:
+            ds[v] = ds[v].rename(nj_u="nj")
+        if "ni_f" in ds[v].dims:
+            ds[v] = ds[v].rename(ni_f="ni_u")
+        if "nj_f" in ds[v].dims:
+            ds[v] = ds[v].rename(nj_f="nj_v")
+    ds = ds.drop_dims(["ni_v", "nj_u", "ni_f", "nj_f"])
+    return ds
+
+def get_z(ds, s=None):
     # z(n,k,j,i) = eta(n,j,i)*(1+s(k)) + depth_c*s(k) + (depth(j,i)-depth_c)*C(k)
-    eta, s, depth, depth_c, C  = ds.XE, ds.SIG, ds.H0, ds.hc, ds.Csu_sig
+    if s is None:
+        s = ds.SIG
+    eta, depth, depth_c, C  = ds.XE, ds.H0, ds.hc, ds.Csu_sig
     # fill land values with 0
     eta = eta.fillna(0.)
     depth = depth.fillna(1.)
@@ -124,6 +170,15 @@ def get_horizontal_indices(ds, lon=-.6, lat=49.7):
         coords[v] = {c:_min[c].values[0] for c in _min.dims}
     coords["position"] = (lon, lat)
     return coords
+
+def get_xgrid(ds):
+    """ Create xgcm grid object
+    """ 
+    coords={'x': {'center':'ni', 'left':'ni_u'}, 
+            'y': {'center':'nj', 'left':'nj_v'}, 
+            's': {'center':'level', 'outer':'level_w'}}
+    xgrid = Grid(ds, periodic=False, coords=coords, boundary='extend')
+    return xgrid
 
 # -----------------------------
 
@@ -177,6 +232,7 @@ def get_cmap_colors(Nc, cmap="plasma"):
     return [scalarMap.to_rgba(i) for i in range(Nc)]
 
 def plot_bs(da, 
+            uv=None,
             zoom=0, 
             title=None,
             fig=None,
@@ -228,11 +284,45 @@ def plot_bs(da,
                         )
             )
         
-        if zoom==0:
-            _extent = ax.get_extent()
-        elif zoom==1:
-            _extent = [-1., 0.2, 49.25, 49.7]
-            
+        if uv is not None:
+                dij = uv[1]
+                u = uv[0].u.isel(ni=slice(0,None, dij), nj=slice(0,None, dij))
+                v = uv[0].v.isel(ni=slice(0,None, dij), nj=slice(0,None, dij))
+                u_src_crs = u / np.cos(u.latitude / 180 * np.pi)
+                v_src_crs = v
+                magnitude = np.sqrt(u**2 + v**2)
+                magn_src_crs = np.sqrt(u_src_crs**2 + v_src_crs**2)
+                _kwargs = dict(transform = ccrs.PlateCarree(), units="width", scale=5)
+                if len(uv)>2:
+                    _kwargs.update(**uv[2])
+                Q = ax.quiver(u.longitude.values, u.latitude.values,
+                              (u_src_crs * magnitude / magn_src_crs).values, 
+                              (v_src_crs * magnitude / magn_src_crs).values,
+                              **_kwargs,
+                             )
+                # for reference arrow, should use:
+                # https://matplotlib.org/stable/gallery/images_contours_and_fields/quiver_demo.html
+                if len(uv)>3:
+                    uv_ref = uv[3]
+                else:
+                    uv_ref = 0.5
+                qk = ax.quiverkey(Q, 0.3, 0.2, uv_ref, r'{:.2f} m/s'.format(uv_ref),
+                                  labelpos='E',
+                                  coordinates='figure',
+                                  transform = ccrs.PlateCarree(),
+                                 )
+        
+        if isinstance(zoom, int):
+            if zoom==0:
+                _extent = ax.get_extent()
+                set_extent = False
+            elif zoom==1:
+                _extent = [-1., 0.2, 49.25, 49.7]
+                set_extent = True
+        elif isinstance(zoom, list):
+            _extent = zoom
+            set_extent = True
+
         # coastlines and land:
         if land:
             if isinstance(land, dict):
@@ -248,7 +338,7 @@ def plot_bs(da,
         if coast_resolution is not None:
             ax.coastlines(resolution=coast_resolution, color='k')
 
-        if zoom>0:
+        if set_extent:
             ax.set_extent(_extent)
         
         if colorbar:
@@ -285,6 +375,18 @@ def plot_bs(da,
         #
         return {"fig": fig, "ax": ax, "cbar": cbar}
 
+def prepare_uv(u, v, ds, xgrid, dij=5, **kwargs):
+    """ prepare uv for quiver plot in plot_bs
+    """
+    # interpolate at the cell center
+    uv = (xr.merge([xgrid.interp(u, "x").rename("u"), 
+                    xgrid.interp(v, "y").rename("v"),
+                   ])
+          .assign_coords(longitude=ds.longitude, latitude=ds.latitude),
+          dij,
+          kwargs,
+         )
+    return uv
 
 def plot_section(da,
                  x,
