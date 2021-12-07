@@ -72,7 +72,7 @@ if __name__ == '__main__':
     # select one location
     f = files.iloc[0]["files"]
     ds = xr.open_dataset(f)
-    idx = ms.get_horizontal_indices(ds)
+    idx = ms.get_horizontal_indices(ds, lon=lon, lat=lat)
     
     def _preprocess(ds):
         ds = (ds.sel(**idx["rho"], **idx["u"], **idx["v"])

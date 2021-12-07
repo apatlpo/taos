@@ -180,6 +180,11 @@ def get_xgrid(ds):
     xgrid = Grid(ds, periodic=False, coords=coords, boundary='extend')
     return xgrid
 
+def get_ij_dims(da):
+    i = next((d for d in da.dims if "ni" in d))
+    j = next((d for d in da.dims if "nj" in d))
+    return i, j
+
 # -----------------------------
 
 def add_eos(ds, S="SAL", PT="TEMP"):

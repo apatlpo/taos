@@ -14,6 +14,13 @@ from .mars import diag_dir
 # ---------------------------- tides ------------------------------------
 
 def predict_tides(time, real=True, summed=True):
+    """ Predict tides based on pytide outputs
+    
+    v = Re ( conj(amplitude) * dsp.f * np.exp(1j*vu) ) 
+    
+    see: https://pangeo-pytide.readthedocs.io/en/latest/pytide.html#pytide.WaveTable.harmonic_analysis
+    
+    """
     
     wt = pytide.WaveTable() # not working on months like time series, need to restrict
     # to restrict the constituents used
