@@ -219,7 +219,13 @@ def TS_plot(ds, t_range=None, s_range=None, figsize=(5, 5)):
     
     return fig, ax
 
-
+def potential_energy_anomaly(ds):
+    # a bit inaccurate numerically
+    g = 9.81
+    h = (ds.sigma0*0+1).integrate("level")
+    rho_bar = (ds.sigma0).integrate("level")/h
+    Ep = (g*(ds.sigma0-rho_bar)*ds.z).integrate("level")/h
+    return Ep.rename("phi")
 
 # -----------------------------
 

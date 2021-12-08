@@ -12,15 +12,6 @@ from tqdm import tqdm
 import taos.utils as ut
 import taos.mars as ms
 
-
-def potential_energy_anomaly(ds):
-    # a bit inaccurate numerically
-    g = 9.81
-    h = (ds.sigma0*0+1).integrate("level")
-    rho_bar = (ds.sigma0).integrate("level")/h
-    Ep = (g*(ds.sigma0-rho_bar)*ds.z).integrate("level")/h
-    return Ep.rename("phi")
-
 if __name__ == '__main__':
 
     cluster, client = ut.spin_up_cluster("local", n_workers=7)
@@ -42,7 +33,7 @@ if __name__ == '__main__':
                       )
 
         ds2D = xr.merge([ds[["U", "V", "XE"]],
-                         potential_energy_anomaly(ds),
+                         ms.potential_energy_anomaly(ds),
                         ]
                         +[ds[v].sel(level=0, method="nearest").rename(v+"_surf")
                           for v in ["UZ", "VZ", "SAL", "TEMP", "sigma0"]]
