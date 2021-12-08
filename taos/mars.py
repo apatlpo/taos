@@ -339,7 +339,7 @@ def plot_bs(da,
                                                            )
             else:
                 land_feature = cfeature.LAND
-            ax.add_feature(land_feature, zorder=0)        
+            ax.add_feature(land_feature, zorder=10)        
         if coast_resolution is not None:
             ax.coastlines(resolution=coast_resolution, color='k')
 
