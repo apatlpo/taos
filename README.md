@@ -1,6 +1,11 @@
 # taos
  taos related work
 
+
+## Conda data processing environment
+
+See [equinox doc](https://github.com/apatlpo/mit_equinox/blob/master/doc/conda.md)
+
 ## Ichtyop install
 
 ### datarmor
