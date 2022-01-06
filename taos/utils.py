@@ -9,46 +9,112 @@ import matplotlib.cm as cmx
 
 import pytide
 
-from .mars import diag_dir
+from .mars import diag_dir, rotate, get_grid_angle
 
 # ---------------------------- tides ------------------------------------
 
-def predict_tides(time, real=True, summed=True):
+def _harmonic_analysis(data, f=None, vu=None, wt=None):
+    """ core method to be wrapped by harmonic_analysis
+    """
+    hanalysis = lambda data: wt.harmonic_analysis(data, f, vu)
+    return np.apply_along_axis(hanalysis, -1, data)
+
+def harmonic_analysis(da, constituents=[]):
+    """ Distributed harmonic analysis
+    
+    Parameters
+    ----------
+    da: xr.Dataarray
+    
+    """
+    #constituents = ["M2", "S2", "N2", "K2", "K1", "O1", "P1", "Q1", "S1", "M4"]
+    wt = pytide.WaveTable(constituents) # not working on months like time series, need to restrict
+    da = da.dropna("time")
+    time = da.time.values.astype("datetime64")
+    f, vu = wt.compute_nodal_modulations(time)
+    a = xr.apply_ufunc(_harmonic_analysis, da,
+                       input_core_dims=[["time"],],
+                       kwargs={"f": f, "vu": vu, "wt": wt},
+                       output_core_dims=[["constituent"]],
+                       vectorize=False,
+                       dask="parallelized",
+                       dask_gufunc_kwargs=dict(output_sizes=dict(constituent=f.shape[0])),
+                       output_dtypes=[np.complex128]
+                      )
+    a = a.assign_coords(constituent=("constituent", wt.constituents()),
+                        frequency=("constituent", wt.freq()*86400/2/np.pi),
+                        frequency_rad=("constituent", wt.freq()), 
+                       )
+    return a.rename("amplitudes")
+
+def predict_tides(time,
+                  har=None,
+                  realimag=None,
+                  real=True, 
+                  summed=True,
+                  suffix="",
+                  name="x",
+                 ):
     """ Predict tides based on pytide outputs
     
     v = Re ( conj(amplitude) * dsp.f * np.exp(1j*vu) ) 
     
     see: https://pangeo-pytide.readthedocs.io/en/latest/pytide.html#pytide.WaveTable.harmonic_analysis
     
+    Parameters
+    ----------
+    time: xr.DataArray
+        Target time
+    har: xr.DataArray, xr.Dataset, optional
+        Complex amplitudes. Load constituents from a reference station otherwise
+    realimag: tuple
+        Contains real and imaginary part variable names when har is a dataset
+    real: boolean, optional
+        returns a real time series if True (default)
+    summed: boolean, optional
+        returns the sum over constituent contributions if True (default)
     """
+
+    if har is None:
+        dsh = xr.open_dataset(os.path.join(diag_dir,"station_tide.nc"))
+        har = (dsh.amplitude_real + 1j * dsh.amplitude_imag).rename("amplitude")
+        har = har.assign_coords(frequency=dsh["frequency"])
+    else:
+        if isinstance(har, xr.Dataset):
+            assert realimag, "You need to specify real and imaginary names via realimag kwarg"
+            _har = har[realimag[0]] + 1j * har[realimag[1]]
+            har = _har.assign_coords(frequency=har["frequency"]).rename(name)
+        else:
+            assert isinstance(har, xr.DataArray), "har should be an xarray Dataset or DataArray"
+            name = har.name
+    constituents = list(har.constituent.values)
     
-    wt = pytide.WaveTable() # not working on months like time series, need to restrict
+    wt = pytide.WaveTable(constituents) # not working on months like time series, need to restrict
     # to restrict the constituents used
     #wt = pytide.WaveTable(["M2", "S2", "N2", "K2", "K1", "O1", "P1", "Q1", "S1", "M4"]) 
 
     time = time.data.astype("datetime64[us]")
     f, vu = wt.compute_nodal_modulations(time)    
-    
-    dsh = xr.open_dataset(os.path.join(diag_dir,"station_tide.nc"))
-    dsh["amplitude"] = dsh.amplitude_real + 1j * dsh.amplitude_imag
-    dsp = dsh.assign_coords(time=("time", time))
+        
+    dsp = har.to_dataset().assign_coords(time=("time", time))
     _time = [(pd.Timestamp(t)-pd.Timestamp(1970,1,1)).total_seconds() for t in dsp.time.data]
     dsp = dsp.assign_coords(time_seconds=("time", _time))
     dsp["f"] = (("constituent", "time"), f)
     dsp["vu"] = (("constituent", "time"), vu)
-    dsp["complex"] =  dsp.f * np.exp(1j*dsp.vu) * np.conj(dsp.amplitude)
-    dsp["real"] = np.real(dsp.complex)
-    dsp["imag"] = np.imag(dsp.complex)
+    dsp["complex"] =  dsp.f * np.exp(1j*dsp.vu) * np.conj(dsp[name])
+    dsp[suffix+"real"] = np.real(dsp.complex)
+    dsp[suffix+"imag"] = np.imag(dsp.complex)
     
     if summed:
         dsp = dsp.sum("constituent").drop_vars(["f", "vu"])
-    if real:
-        return dsp["real"]
     else:
-        dsp["prediction"] = dsp["real"].sum("constituent")
-        dsp["prediction_quad"] = dsp["imag"].sum("constituent")
+        dsp["frequency"] = har["frequency"]
+    if real:
+        return dsp[suffix+"real"]
+    else:
+        dsp["prediction"] = dsp[suffix+"real"].sum("constituent")
+        dsp["prediction_quad"] = dsp[suffix+"imag"].sum("constituent")
         return dsp
-
 
 def compute_tidal_range(da, window=1):
     """ Compute tidal range over a rolling window
@@ -65,6 +131,81 @@ def compute_tidal_range(da, window=1):
     h_max = da.rolling(time=delta, center=True).max()
     h_min = da.rolling(time=delta, center=True).min()
     return (h_max-h_min).rename("range")
+
+def get_ellipse_properties(u, v):
+    """ Compute tidal ellipse properties
+    
+    Parameters
+    ----------
+    u, v: xr.DataArray
+        velocity complex amplitudes
+        u(t) = Re( conj(u) e^{i\omega t} )
+    """
+    wp = (np.conj(u) + 1j*np.conj(v))/2
+    wn = (u+1j*v)/2
+    Wp, Wn = np.abs(wp), np.abs(wn)
+    A = (Wp + Wn).rename("A")
+    a = (Wp - Wn).rename("a")
+    thetap = xr.apply_ufunc(np.angle, wp, dask="parallelized")
+    thetan = xr.apply_ufunc(np.angle, wn, dask="parallelized")
+    inclinaison = ((thetap+thetan)/2).rename("inclinaison")
+    phase = ((-thetap+thetan)/2).rename("phase")
+    return xr.merge([A, a, inclinaison, phase])
+
+def compute_plot_ellipses(u,v,lon,lat,xgrid,
+                          dij=10, 
+                          lon_ref=-.6, lat_ref=49.3, 
+                          u_ref=1., 
+                          v_ref=0.1*1j,
+                          T = .5 * 12/2/np.pi/24*86400,
+                         ):
+
+    u = xgrid.interp(u, "x")
+    v = xgrid.interp(v, "y")
+
+    phi = get_grid_angle(lon, lat)
+    u, v = rotate(u, v, phi)
+
+    slices = dict(ni=slice(0,None,dij), nj=slice(0,None,dij))
+    u = u.isel(**slices).rename("u")
+    v = v.isel(**slices).rename("v")
+    lat = lat.isel(**slices)
+
+    ds = xr.merge([u, v]).chunk(dict(ni=-1, nj=-1))
+    ds = ds.assign_coords(time=("time", np.arange(0, 2*np.pi, .1)),
+                          lon=lon, lat=lat,
+                          lon_scale = 111e3*np.cos(np.pi/180*lat),
+                          lat_scale = 111e3*(1+lat*0),
+                         )
+    ds = ds.stack(point=["ni", "nj"])
+
+    ds["x"] = ds.lon + T*np.real( np.conj(ds.u) *np.exp(1j*ds.time) )/ds.lon_scale
+    ds["y"] = ds.lat + T*np.real( np.conj(ds.v) *np.exp(1j*ds.time) )/ds.lat_scale
+
+    lon_scale = 111e3*np.cos(np.pi/180*lat_ref)
+    lat_scale = 111e3
+    ds["x_ref"] = lon_ref + T*np.real( np.conj(u_ref) *np.exp(1j*ds.time) )/lon_scale
+    ds["y_ref"] = lat_ref + T*np.real( np.conj(v_ref) *np.exp(1j*ds.time) )/lat_scale
+    ds.attrs.update(u_ref=u_ref, v_ref=v_ref)
+
+    return ds
+
+def plot_ellipses(ax, ds, markersize=1):
+    ax.plot(ds["x"].T, ds["y"].T, color="k", transform=ms.ccrs.PlateCarree())
+    # high tide
+    ax.plot(ds["x"].sel(time=0), 
+            ds["y"].sel(time=0), 
+            "o", color="r", markersize=markersize,
+            transform=ms.ccrs.PlateCarree())
+    # 90deg (3 hours) before high tide
+    ax.plot(ds["x"].sel(time=3*np.pi/2, method="nearest"), 
+            ds["y"].sel(time=3*np.pi/2, method="nearest"),
+            "o", color="orange", markersize=markersize,
+            transform=ms.ccrs.PlateCarree())
+    #
+    ax.plot(ds.x_ref, ds.y_ref, color="k", transform=ms.ccrs.PlateCarree(), zorder=20)
+    ax.text(ds.x_ref[0], ds.y_ref[0], "{} m/s".format(ds.u_ref), 
+            verticalalignment="center", transform=ms.ccrs.PlateCarree(), zorder=20)
 
 # ---------------------------- dask related ------------------------------------
 

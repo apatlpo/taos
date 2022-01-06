@@ -185,6 +185,20 @@ def get_ij_dims(da):
     j = next((d for d in da.dims if "nj" in d))
     return i, j
 
+def get_grid_angle(lon, lat):
+    """ get grid orientation
+    """
+    #lon, lat = ds.longitude, ds.latitude
+    sc = np.cos(np.pi/180*lat)
+    tan = (lat.shift(ni=-1) - lat)/(lon.shift(ni=-1) - lon)/sc
+    phi = np.arctan(tan)
+    return phi
+
+def rotate(u, v, phi):
+    _u = np.cos(phi)*u - np.sin(phi)*v
+    _v = np.sin(phi)*u + np.cos(phi)*v
+    return _u, _v
+
 # -----------------------------
 
 def add_eos(ds, S="SAL", PT="TEMP"):
