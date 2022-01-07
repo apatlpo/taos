@@ -54,6 +54,8 @@ def predict_tides(time,
                   summed=True,
                   suffix="",
                   name="x",
+                  constituents=None,
+                  ignore=None,
                  ):
     """ Predict tides based on pytide outputs
     
@@ -87,13 +89,13 @@ def predict_tides(time,
         else:
             assert isinstance(har, xr.DataArray), "har should be an xarray Dataset or DataArray"
             name = har.name
-    constituents = list(har.constituent.values)
-    
-    wt = pytide.WaveTable(constituents) # not working on months like time series, need to restrict
-    # to restrict the constituents used
-    #wt = pytide.WaveTable(["M2", "S2", "N2", "K2", "K1", "O1", "P1", "Q1", "S1", "M4"]) 
+    if suffix=="":
+        suffix = name+"_"
 
-    time = time.data.astype("datetime64[us]")
+    constituents = list(har.constituent.values)    
+    wt = pytide.WaveTable(constituents) 
+
+    time = time.data.astype("datetime64")
     f, vu = wt.compute_nodal_modulations(time)    
         
     dsp = har.to_dataset().assign_coords(time=("time", time))
@@ -101,20 +103,27 @@ def predict_tides(time,
     dsp = dsp.assign_coords(time_seconds=("time", _time))
     dsp["f"] = (("constituent", "time"), f)
     dsp["vu"] = (("constituent", "time"), vu)
-    dsp["complex"] =  dsp.f * np.exp(1j*dsp.vu) * np.conj(dsp[name])
-    dsp[suffix+"real"] = np.real(dsp.complex)
-    dsp[suffix+"imag"] = np.imag(dsp.complex)
+    cplx =  dsp.f * np.exp(1j*dsp.vu) * np.conj(dsp[name])
+    dsp[suffix+"real"] = np.real(cplx)
+    dsp[suffix+"imag"] = np.imag(cplx)
+    
+    if constituents is not None:
+        dsp = dsp.sel(constituent=constituents)
+    if ignore is not None:
+        dsp = dsp.drop_sel(constituent=ignore)
     
     if summed:
         dsp = dsp.sum("constituent").drop_vars(["f", "vu"])
     else:
         dsp["frequency"] = har["frequency"]
+        
     if real:
-        return dsp[suffix+"real"]
+        dsp = dsp[suffix+"real"]
     else:
-        dsp["prediction"] = dsp[suffix+"real"].sum("constituent")
-        dsp["prediction_quad"] = dsp[suffix+"imag"].sum("constituent")
-        return dsp
+        dsp[suffix+"prediction"] = dsp[suffix+"real"]
+        dsp[suffix+"prediction_quad"] = dsp[suffix+"imag"]
+        
+    return dsp
 
 def compute_tidal_range(da, window=1):
     """ Compute tidal range over a rolling window

@@ -176,7 +176,9 @@ def get_xgrid(ds):
     """ 
     coords={'x': {'center':'ni', 'left':'ni_u'}, 
             'y': {'center':'nj', 'left':'nj_v'}, 
-            's': {'center':'level', 'outer':'level_w'}}
+           }
+    if "level" in ds.dims and "level_w" in ds.dims:
+        coords["s"] = {'center':'level', 'outer':'level_w'}
     xgrid = Grid(ds, periodic=False, coords=coords, boundary='extend')
     return xgrid
 
