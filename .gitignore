@@ -1,5 +1,7 @@
 hw/datarmor/run*/
 hal/lib_install_proxy.md
+campaign/*.csv
+campaign/pacific_url
 
 clean~
 clean
@@ -12,7 +14,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 
-# eclipse related files 
+# eclipse related files
 .project
 .pydevproject
 .settings/

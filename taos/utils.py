@@ -4,13 +4,68 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 
+from matplotlib import pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+import cmocean.cm as cm
 
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import cartopy.geodesic as cgeo
+
+import pyproj
 import pytide
 
 from .mars import diag_dir, rotate, get_grid_angle
 
+rad2deg = 180./np.pi
+knot = 0.514
+
+# ----------------------------bathy, projections ---------------------------
+
+def load_bathy():
+
+    gebco_dir  = "/Users/aponte/Data/bathy/gebco_baie_de_seine/"
+    nc = os.path.join(gebco_dir, 
+        "gebco_2020_n50.173379057995874_s48.94860405517183_w-2.039721447010817_e0.5888341359731002.nc")
+
+    ds = xr.open_dataset(nc)
+    da = ds.elevation.rename("depth")
+    da = -da.where(da<0)
+
+    return da
+
+def metrics_cheatsheet(lon, lat):
+    """print useful info for navigation"""
+    
+    proj = pyproj.Proj(proj="aeqd", lat_0=lat, lon_0=lon, datum="WGS84", units="m")
+
+    def dl(dlon, dlat):
+        x0, y0 = proj.transform(lon, lat)
+        x1, y1 = proj.transform(lon+dlon, lat+dlat)
+        return np.sqrt((x1-x0)**2+(y1-y0)**2)
+
+    print(f" lon: 1 deg = {dl(1,0)/1e3:.2f}km,  0.1 deg = {dl(.1,0)/1e3:.1f}km"+ \
+          f",  0.01 deg = {dl(.01,0):.1f}m,  0.001 deg = {dl(.001,0):.1f}m"
+         )
+    print(f" lon: 1 deg = {dl(1,0)/1e3:.2f}km,  1 min = {dl(1/60,0):.1f}m"+ \
+          f",  .1 min = {dl(.1/60,0):.1f}m,  0.01 min = {dl(.01/60,0):.1f}m"
+         )
+    print(f" lon: 1 deg = {dl(1,0)/1e3:.2f}km,  1 sec = {dl(1/3600,0):.1f}m"+ \
+          f",  .1 sec = {dl(.1/3600,0):.1f}m"
+         )
+    print("-----------------------------------------------------------------")
+    print(f" lat: 1 deg = {dl(0,1)/1e3:.2f}km,  0.1 deg = {dl(0,.1)/1e3:.1f}km"+ \
+          f",  0.01 deg = {dl(0,.01):.1f}m,  0.001 deg = {dl(0,.001):.1f}m"
+         )
+    print(f" lat: 1 deg = {dl(0,1)/1e3:.2f}km,  1 min = {dl(0,1/60):.1f}m"+ \
+          f",  .1 min = {dl(0,.1/60):.1f}m,  0.01 min = {dl(0,.01/60):.1f}m"
+         )
+    print(f" lat: 1 deg = {dl(0,1)/1e3:.2f}km,  1 sec = {dl(0,1/3600):.1f}m"+ \
+          f",  .1 sec = {dl(0,.1/3600):.1f}m"
+         )
+        
 # ---------------------------- tides ------------------------------------
 
 def _harmonic_analysis(data, f=None, vu=None, wt=None):
@@ -333,3 +388,121 @@ def get_cmap_colors(Nc, cmap='plasma'):
                                    cmap=cmap)
     return [scalarMap.to_rgba(i) for i in range(Nc)]
 
+def plot_bs(da=None,
+            zoom=0, 
+            bathy=True,
+            title=None,
+            fig=None,
+            ax=None,
+            colorbar=True,
+            colorbar_kwargs={},
+            center_colormap=False,
+            gridlines=True,
+            dticks=(1, 1),
+            land=True,
+            coast_resolution="10m",
+            offline=False,
+            figsize=0,
+            **kwargs,
+           ):
+    
+    #        
+    if figsize==0:
+        _figsize = (10, 5)
+    elif figsize==1:
+        _figsize = (20, 10)
+    else:
+        _figsize = figsize
+    if fig is None and ax is None:
+        fig = plt.figure(figsize=_figsize)
+        ax = fig.add_subplot(111, projection=ccrs.Orthographic(0., 49.5))
+
+    # copy kwargs for update
+    kwargs = kwargs.copy()
+    
+    if center_colormap and da is not None:
+        vmax = float(abs(da).max())
+        vmin = -vmax
+        kwargs["vmin"] = vmin
+        kwargs["vmax"] = vmax        
+
+    if bathy is not None:
+        da = load_bathy()
+        da = da.rename(lon="longitude", lat="latitude")
+        if "vmax" not in kwargs:
+            kwargs.update(vmax=50)
+        kwargs.update(cmap=cm.deep)
+        
+    if da is not None:
+        im = (da
+             .squeeze()
+             .plot
+             .pcolormesh(x="longitude", y="latitude", 
+                         ax=ax,
+                         transform=ccrs.PlateCarree(),
+                         add_colorbar=False,
+                         **kwargs,
+                        )
+            )
+
+    if isinstance(zoom, int):
+        if zoom==0:
+            _extent = ax.get_extent()
+            set_extent = False
+        elif zoom==1:
+            _extent = [-1., 0.2, 49.25, 49.7]
+            set_extent = True
+        elif zoom==2:
+            _extent = [-.6, 0., 49.25, 49.5]
+            set_extent = True
+    elif isinstance(zoom, list):
+        _extent = zoom
+        set_extent = True
+
+    # coastlines and land:
+    if land:
+        if isinstance(land, dict):
+            #land = dict(args=['physical', 'land', '10m'],
+            #            kwargs= dict(edgecolor='face', facecolor=cfeature.COLORS['land']),
+            #           )
+            land_feature = cfeature.NaturalEarthFeature(*land['args'], 
+                                                        **land['kwargs'],
+                                                       )
+        else:
+            land_feature = cfeature.LAND
+        ax.add_feature(land_feature, zorder=10)        
+    if coast_resolution is not None:
+        ax.coastlines(resolution=coast_resolution, color='k')
+
+    if set_extent:
+        ax.set_extent(_extent)
+
+    if colorbar:
+        #cbar = fig.colorbar(im, extend="neither", shrink=0.7, **colorbar_kwargs)
+        axins = inset_axes(ax,
+               width="5%",  # width = 5% of parent_bbox width
+               height="100%",  # height : 50%
+               loc='lower left',
+               bbox_to_anchor=(1.05, 0., 1, 1),
+               bbox_transform=ax.transAxes,
+               borderpad=0,
+               )            
+        #cbar = fig.colorbar(im, extend="neither", shrink=0.9, 
+        cbar = fig.colorbar(im,
+                            extend="neither",
+                            cax=axins,
+                            **colorbar_kwargs)            
+    else:
+        cbar = None
+
+    if gridlines:
+        gl = ax.gridlines(draw_labels=True, dms=False, 
+                     x_inline=False, y_inline=False, 
+                    )
+        gl.right_labels=False
+        gl.top_labels=False
+
+    if title is not None:
+        ax.set_title(title, fontdict={"fontsize": 12, }) #"fontweight": "bold"
+    #
+    return {"fig": fig, "ax": ax, "cbar": cbar}
