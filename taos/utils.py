@@ -22,7 +22,7 @@ from .mars import diag_dir, rotate, get_grid_angle
 rad2deg = 180./np.pi
 knot = 0.514
 
-# ----------------------------bathy, projections ---------------------------
+# ---------------------------- bathy --------------------------------------
 
 def load_bathy():
 
@@ -35,36 +35,6 @@ def load_bathy():
     da = -da.where(da<0)
 
     return da
-
-def metrics_cheatsheet(lon, lat):
-    """print useful info for navigation"""
-    
-    proj = pyproj.Proj(proj="aeqd", lat_0=lat, lon_0=lon, datum="WGS84", units="m")
-
-    def dl(dlon, dlat):
-        x0, y0 = proj.transform(lon, lat)
-        x1, y1 = proj.transform(lon+dlon, lat+dlat)
-        return np.sqrt((x1-x0)**2+(y1-y0)**2)
-
-    print(f" lon: 1 deg = {dl(1,0)/1e3:.2f}km,  0.1 deg = {dl(.1,0)/1e3:.1f}km"+ \
-          f",  0.01 deg = {dl(.01,0):.1f}m,  0.001 deg = {dl(.001,0):.1f}m"
-         )
-    print(f" lon: 1 deg = {dl(1,0)/1e3:.2f}km,  1 min = {dl(1/60,0):.1f}m"+ \
-          f",  .1 min = {dl(.1/60,0):.1f}m,  0.01 min = {dl(.01/60,0):.1f}m"
-         )
-    print(f" lon: 1 deg = {dl(1,0)/1e3:.2f}km,  1 sec = {dl(1/3600,0):.1f}m"+ \
-          f",  .1 sec = {dl(.1/3600,0):.1f}m"
-         )
-    print("-----------------------------------------------------------------")
-    print(f" lat: 1 deg = {dl(0,1)/1e3:.2f}km,  0.1 deg = {dl(0,.1)/1e3:.1f}km"+ \
-          f",  0.01 deg = {dl(0,.01):.1f}m,  0.001 deg = {dl(0,.001):.1f}m"
-         )
-    print(f" lat: 1 deg = {dl(0,1)/1e3:.2f}km,  1 min = {dl(0,1/60):.1f}m"+ \
-          f",  .1 min = {dl(0,.1/60):.1f}m,  0.01 min = {dl(0,.01/60):.1f}m"
-         )
-    print(f" lat: 1 deg = {dl(0,1)/1e3:.2f}km,  1 sec = {dl(0,1/3600):.1f}m"+ \
-          f",  .1 sec = {dl(0,.1/3600):.1f}m"
-         )
         
 # ---------------------------- tides ------------------------------------
 
