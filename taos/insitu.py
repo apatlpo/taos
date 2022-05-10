@@ -95,7 +95,7 @@ def _match_displacements(x, dX, Uo, speed, t_wait):
     Us = speed*np.exp(1j*theta)
     return np.abs( dX + Uo*(dt + t_wait) - Us*dt )
 
-def solve_route_heading(dX, speed, Uo, time_waiting, time_max=10, **kwargs):
+def solve_route_heading(dX, speed, Uo, time_waiting, time_max=1, **kwargs):
     """ Solve where we need to head given:
     
     Parameters
@@ -310,6 +310,339 @@ def plot_deployments_route(lon, lat, df, arrows=True, **kwargs):
     # labels
     for i in range(lon.size):
         ax.text(lon[i]+1e-3, lat[i], f"{i}", transform=ccrs.PlateCarree())   
+
+
+class dashboard_route(object):
+    
+    def __init__(self, lon, lat, **kwargs):
+        #
+        self.lon_vertices = lon
+        self.lat_vertices = lat
+        #
+        self.update_num=0
+
+        self.out = widgets.Output()
+        display(self.out)
+
+        self.build_dashboard(**kwargs)
+        self.update(None) # time, devices
+
+
+    def build_dashboard(self, **kwargs):
+        
+        dkwargs = dict(ship_speed=5., square_radius=1., square_theta=0., square_center=2, time_waiting=1.)
+        dkwargs.update(**kwargs)
+        
+        w = dict()
+        
+        w["button"] = widgets.Button(
+            description='Update',
+            disabled=False,
+            button_style='', # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Update',
+            icon='check' # (FontAwesome names without the `fa-` prefix)
+        )
+        w["button"].on_click(self.update)
+        
+        w["ship_speed"] = widgets.FloatSlider(
+            value=dkwargs["ship_speed"],
+            min=1.,
+            max=15.0,
+            step=0.5, # 0.1 sec = 2m
+            description='Ship speed [knots]:',
+            disabled=False,
+            continuous_update=False,
+            orientation='horizontal',
+            readout=True,
+            readout_format='.1f',
+        )
+        
+        w["current_speed_x"] = widgets.FloatSlider(
+            value=0.,
+            min=-2.,
+            max=2.,
+            step=0.02, # 0.1 sec = 2m
+            description='Current speed x [m/s]:',
+            disabled=False,
+            continuous_update=False,
+            orientation='horizontal',
+            readout=True,
+            readout_format='.2f',
+        )
+
+        w["current_speed_y"] = widgets.FloatSlider(
+            value=0.,
+            min=-2.,
+            max=2.,
+            step=0.02, # 0.1 sec = 2m
+            description='Current speed y [m/s]:',
+            disabled=False,
+            continuous_update=False,
+            orientation='horizontal',
+            readout=True,
+            readout_format='.2f',
+        )
+        
+        _now = datetime.utcnow()
+        self.now = _now
+        
+        _lon_deg, _lon_min = deg_mindec(self.lon_vertices[0])
+        _lat_deg, _lat_min = deg_mindec(self.lat_vertices[0])
+        for suff in ["ship", "anchor"]:
+
+            w[suff+"_lon_deg"] = widgets.Dropdown(
+                options=["0W"], # to be generalized
+                value="0W",
+                description=suff+' lon - deg:',
+                disabled=False,
+            )
+
+            w[suff+"_lon_min"] = widgets.BoundedFloatText(
+                value=_lon_min,
+                min=0.,
+                max=60.0,
+                step=0.001,
+                description='lon min dec:',
+                disabled=False
+            )
+            
+            #widgets.Dropdown(
+            #    options=np.arange(60),
+            #    value=15,
+            #    description=suff+' lon [min]:',
+            #    disabled=False,
+            #)
+                        
+            #w[suff+"_lon_sec"] = widgets.FloatSlider(
+            #    value=0,
+            #    min=0,
+            #    max=60.0,
+            #    step=0.1, # 0.1 sec = 2m
+            #    description=suff+' lon [sec]:',
+            #    disabled=False,
+            #    continuous_update=False,
+            #    orientation='horizontal',
+            #    readout=True,
+            #    readout_format='.1f',
+            #)
+
+            w[suff+"_lat_deg"] = widgets.Dropdown(
+                options=["49N"], # to be generalized
+                value="49N",
+                description=suff+' lat [deg]:',
+                disabled=False,
+            )
+
+            
+            w[suff+"_lat_min"] = widgets.BoundedFloatText(
+                value=_lat_min,
+                min=0.,
+                max=60.0,
+                step=0.001,
+                description='lat min dec:',
+                disabled=False
+            )
+            
+            #w[suff+"_lat_min"] = widgets.Dropdown(
+            #    options=np.arange(60),
+            #    value=19,
+            #    description=suff+' lat [min]:',
+            #    disabled=False,
+            #)
+
+            w[suff+"_lat_sec"] = widgets.FloatSlider(
+                value=0.,
+                min=0,
+                max=60.0,
+                step=0.1, # 0.1 sec = 2m
+                description=suff+' lat - sec:',
+                disabled=False,
+                continuous_update=False,
+                orientation='horizontal',
+                readout=True,
+                readout_format='.1f',
+            )
+            
+            w[suff+"_hour"] = widgets.Dropdown(
+                options=np.arange(24),
+                description=suff+' hour:',
+                disabled=False,
+                value=_now.hour,
+            )
+
+            w[suff+"_minute"] = widgets.Dropdown(
+                options=np.arange(60),
+                description=suff+' minute:',
+                disabled=False,
+                value=_now.minute,
+            )
+
+            w[suff+"_second"] = widgets.Dropdown(
+                options=np.arange(60),
+                description=suff+' second:',
+                disabled=False,
+                value=_now.second,
+            )
+            
+
+        w["square_radius"] = widgets.FloatSlider(
+            value=dkwargs["square_radius"],
+            min=.1,
+            max=10.0,
+            step=0.1, # 0.1 sec = 2m
+            description='Square radius [km]:',
+            disabled=False,
+            continuous_update=False,
+            orientation='horizontal',
+            readout=True,
+            readout_format='.1f',
+        )
+            
+        w["square_theta"] = widgets.FloatSlider(
+            value=dkwargs["square_theta"],
+            min=-90.,
+            max=90.0,
+            step=2., # 0.1 sec = 2m
+            description='Square orientation [deg]:',
+            disabled=False,
+            continuous_update=False,
+            orientation='horizontal',
+            readout=True,
+            readout_format='.0f',
+        )
+
+        w["square_center"] = widgets.Dropdown(
+            options=np.arange(5),
+            value=dkwargs["square_center"],
+            description='Center index',
+            disabled=False,
+        )
+        
+        w["time_waiting"] = widgets.FloatSlider(
+            value=dkwargs["time_waiting"],
+            min=1.,
+            max=30.0,
+            step=1., # 0.1 sec = 2m
+            description='Time waiting [min]:',
+            disabled=False,
+            continuous_update=False,
+            orientation='horizontal',
+            readout=True,
+            readout_format='.0f',
+        )        
+        
+        w["skip"] = widgets.Dropdown(
+            options=np.arange(5),
+            value=0,
+            description='Skip index',
+            disabled=False,
+        )
+            
+            
+        #
+        grid = widgets.GridspecLayout(10, 3, height='400px', align_items="center")
+
+        i=0
+        grid[0, 0] = w["button"]
+        i+=1
+
+        #
+        grid[i, 0] = w["ship_speed"]
+        grid[i, 1] = w["current_speed_x"]
+        grid[i, 2] = w["current_speed_y"]
+        i+=1
+
+        for suff in ["ship", "anchor"]:
+
+            grid[i, 0] = w[suff+"_lon_deg"]
+            grid[i, 1] = w[suff+"_lon_min"]
+            #grid[i, 2] = w[suff+"_lon_sec"]
+            i+=1
+
+            grid[i, 0] = w[suff+"_lat_deg"]
+            grid[i, 1] = w[suff+"_lat_min"]
+            #grid[i, 2] = w[suff+"_lat_sec"]
+            i+=1
+            
+            # time
+            if suff!="ship":
+                grid[i, 0] = w[suff+"_hour"]
+                grid[i, 1] = w[suff+"_minute"]
+                grid[i, 2] = w[suff+"_second"]
+                i+=1
+
+        grid[i, 0] = w["square_radius"]
+        grid[i, 1] = w["square_theta"]
+        grid[i, 2] = w["square_center"]
+        i+=1
+
+        grid[i, 0] = w["time_waiting"]
+        grid[i, 1] = w["skip"]
+            
+        # store
+        self.grid = grid
+        self.w = w
+        
+    def update(self, button):
+        #_now = datetime.utcnow()
+        w = self.w
+        
+        #self.w["date"].value = _now
+        #self.w["hour"].value = _now.hour
+        #self.w["minute"].value = _now.minute
+        #self.w["second"].value = _now.second
+        ll = {}
+        for suff in ["ship", "anchor"]:
+            lond = w[suff+"_lon_deg"].value
+            lon = float(lond[:-1])
+            if lond[-1]=="W":
+                sign = -1
+            else:
+                sign = 1
+            #lon = sign * (lon + w[suff+"_lon_min"].value/60 + w[suff+"_lon_sec"].value/3600)
+            lon = sign * (lon + w[suff+"_lon_min"].value/60)
+            #
+            latd = w[suff+"_lat_deg"].value
+            lat = float(latd[:-1])
+            if latd[-1]=="N":
+                sign = 1
+            else:
+                sign = -1
+            #lat = sign * (lat + w[suff+"_lat_min"].value/60 + w[suff+"_lat_sec"].value/3600)
+            lat = sign * (lat + w[suff+"_lat_min"].value/60)
+            ll[suff] = dict(lon=lon, lat=lat)
+        ocean_current = w["current_speed_x"].value + 1j*w["current_speed_y"].value
+        time_waiting = w["time_waiting"].value*60. # converts to seconds
+        date = self.now
+        time_a = pd.Timestamp(year=date.year, month=date.month, day=date.day,
+                              hour=w["anchor_hour"].value, minute=w["anchor_minute"].value, second=w["anchor_second"].value,
+                             )
+        df = deployments_route_schedule(ll["ship"]["lon"], ll["ship"]["lat"], 
+                                            w["ship_speed"].value*knot,
+                                            self.lon_vertices, self.lat_vertices,
+                                            time_waiting,
+                                            ocean_current,
+                                            ll["anchor"]["lon"], ll["anchor"]["lat"], time_a=time_a,
+                                            skip=w["skip"].value,
+                                            )
+                
+        with self.out:
+            clear_output()
+            print(f"New hello from each button click!. This hello from {self.update_num}")
+            for label, r in df.iterrows():
+                _lon_deg, _lon_min = deg_mindec(r.lon)
+                _lat_deg, _lat_min = deg_mindec(r.lat)
+                if _lon_deg<=0:
+                    EW="W"
+                else:
+                    EW="E"
+                time = r.time.strftime("%Y/%m/%d %H:%M:%S")
+                print(f" drifter {label}: {_lon_deg}{EW} {_lon_min:.3f}  {_lat_deg}N {_lat_min:.3f} "\
+                      f"at {time}")
+            print(df)
+            self.update_num+=1
+        
+        self.df = df
 
 
 # ---------------------------- deployment geometry -------------------------------
@@ -637,7 +970,7 @@ def monitor_drifters(refresh_time=5, **kwargs):
         time.sleep(refresh_time)
         first=False
 
-# ---------------------------- drifter data; manual logggin -----------------------------
+# ---------------------------- drifter data; manual logging -----------------------------
 
 class dashboard_log(object):
     
