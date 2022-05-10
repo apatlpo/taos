@@ -347,8 +347,8 @@ class dashboard_route(object):
         w["ship_speed"] = widgets.FloatSlider(
             value=dkwargs["ship_speed"],
             min=1.,
-            max=15.0,
-            step=0.5, # 0.1 sec = 2m
+            max=20.0,
+            step=1., # 0.1 sec = 2m
             description='Ship speed [knots]:',
             disabled=False,
             continuous_update=False,
@@ -357,31 +357,49 @@ class dashboard_route(object):
             readout_format='.1f',
         )
         
-        w["current_speed_x"] = widgets.FloatSlider(
-            value=0.,
-            min=-2.,
-            max=2.,
-            step=0.02, # 0.1 sec = 2m
-            description='Current speed x [m/s]:',
-            disabled=False,
-            continuous_update=False,
-            orientation='horizontal',
-            readout=True,
-            readout_format='.2f',
+        w["current_speed_x"] = widgets.BoundedFloatText(
+                value=0.,
+                min=-1.,
+                max=1.,
+                step=0.02,
+                description='Current speed x [m/s]:',
+                disabled=False
         )
+        
+        #widgets.FloatSlider(
+        #    value=0.,
+        #    min=-2.,
+        #    max=2.,
+        #    step=0.02, # 0.1 sec = 2m
+        #    description='Current speed x [m/s]:',
+        #    disabled=False,
+        #    continuous_update=False,
+        #    orientation='horizontal',
+        #    readout=True,
+        #    readout_format='.2f',
+        #)
 
-        w["current_speed_y"] = widgets.FloatSlider(
-            value=0.,
-            min=-2.,
-            max=2.,
-            step=0.02, # 0.1 sec = 2m
-            description='Current speed y [m/s]:',
-            disabled=False,
-            continuous_update=False,
-            orientation='horizontal',
-            readout=True,
-            readout_format='.2f',
-        )
+        w["current_speed_y"] = widgets.BoundedFloatText(
+                value=0.,
+                min=-1.,
+                max=1.,
+                step=0.02,
+                description='Current speed y [m/s]:',
+                disabled=False
+            )
+        
+        #widgets.FloatSlider(
+        #    value=0.,
+        #    min=-2.,
+        #    max=2.,
+        #    step=0.02, # 0.1 sec = 2m
+        #    description='Current speed y [m/s]:',
+        #    disabled=False,
+        #    continuous_update=False,
+        #    orientation='horizontal',
+        #    readout=True,
+        #    readout_format='.2f',
+        #)
         
         _now = datetime.utcnow()
         self.now = _now
