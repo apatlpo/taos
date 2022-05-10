@@ -22,6 +22,7 @@ from .utils import plot_bs
 
 rad2deg = 180./np.pi
 knot = 0.514
+nmile = 1852 # meters
 
 one_second = pd.Timedelta("1s")
 now = lambda: pd.to_datetime(datetime.utcnow())
@@ -76,15 +77,15 @@ def metrics_cheatsheet(lon, lat):
           f",  .1 sec = {dl(0,.1/3600):.1f}m"
          )
     
-def _deg_mindec(v):
+def deg_mindec(v):
     deg = np.trunc(v)
     mind = abs(v - deg)*60
     return deg, mind
 
 def to_deg_mindec(df, lon, lat):
     """add lon/lat in deg/min decimals to a dataframe"""
-    df[lon+"_deg"], df[lon+"_min"] = _deg_mindec(df[lon])
-    df[lat+"_deg"], df[lat+"_min"] = _deg_mindec(df[lat])
+    df[lon+"_deg"], df[lon+"_min"] = deg_mindec(df[lon])
+    df[lat+"_deg"], df[lat+"_min"] = deg_mindec(df[lat])
     return df
 
 # ---------------------------- route scheduling ----------------------------------
@@ -400,6 +401,40 @@ def build_square_geo(lon_a, lat_a, L, theta, **kwargs):
     lon, lat = xy2ll(x, y)
     return lon, lat, x + 1j*y
 
+def radiator(R, N, theta):
+    """Build a radiator:
+
+    Parameters
+    ----------
+    R: float
+        Radius in meters
+    N: int
+        Number of segments (odd preferentially)
+    theta: float
+        Orientation angle in radians
+        
+    Returns
+    -------
+    X: np.array
+        Vertex positions as complex numbers
+    length: float
+        Length of the radiators in meters
+    """
+    ex, ey = 1, 1j
+    s = np.sqrt(2)
+    delta = s/(N-1)
+    x0 = s/2*(ex+ey)
+    print(x0)
+    X = [x0]
+    dX = [-s*ex, -delta*ey, s*ex, -delta*ey]
+    for i in range((N-1)//2):
+        for dx in dX:
+            X.append(X[-1]+dx)
+    X.append(X[-1]-s*ex)
+    X = R*np.array(X)*np.exp(1j*theta)
+    length = sum(np.abs(np.diff(X)))
+    print(f"Distance {length/nmile} NM")
+    return X, length
 
 # ---------------------------- drifter data -------------------------------
 
@@ -491,6 +526,30 @@ def extrapolate(dr, time=None):
 
 
 # ---------------------------- drifter monitoring ---------------------------------------
+
+def show_last_positions(dr, dr_now, **kwargs):
+    """ Show last positions """
+    for key, d in dr.items():
+        dl = d.iloc[-1]
+        _lon_deg, _lon_min = deg_mindec(dl.longitude)
+        _lat_deg, _lat_min = deg_mindec(dl.latitude)
+        if _lon_deg<=0:
+            EW="W"
+        else:
+            EW="E"
+        time = dl.name.strftime("%Y/%m/%d %H:%M:%S")
+        print(f" drifter {key}: {_lon_deg}{EW} {_lon_min:.3f}  {_lat_deg}N {_lat_min:.3f} "\
+              f" speed=({dl.u:.2f}, {dl.v:.2f}) at {time}")
+    
+    dkwargs = dict(bathy=False, zoom=[-.4, -.1, 49.27, 49.4], vmax=30, figsize=(10,10), 
+                   land=dict(scale="10m"), coast_resolution=None)
+    dkwargs.update(**kwargs)
+    fac = plot_bs(**dkwargs)
+    ax = fac["ax"]
+    for key, d in dr.items():
+        dl = d.iloc[-1]
+        ax.scatter(dl.longitude, dl.latitude, 30, color="orange", transform=ccrs.PlateCarree())
+        ax.text(dl.longitude+1e-3, dl.latitude, f"{key}", transform=ccrs.PlateCarree())
 
 def monitor_drifters(refresh_time=5, **kwargs):
     """Continuous monitoring of drifter positions

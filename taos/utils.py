@@ -370,7 +370,7 @@ def plot_bs(da=None,
             gridlines=True,
             dticks=(1, 1),
             land=True,
-            coast_resolution="10m",
+            coast_resolution="110m",
             offline=False,
             figsize=0,
             **kwargs,
@@ -432,18 +432,19 @@ def plot_bs(da=None,
 
     # coastlines and land:
     if land:
+        dland = dict(scale="110m", edgecolor='face', facecolor=cfeature.COLORS['land'])
         if isinstance(land, dict):
+            dland.update(**land)
             #land = dict(args=['physical', 'land', '10m'],
             #            kwargs= dict(edgecolor='face', facecolor=cfeature.COLORS['land']),
             #           )
-            land_feature = cfeature.NaturalEarthFeature(*land['args'], 
-                                                        **land['kwargs'],
-                                                       )
-        else:
-            land_feature = cfeature.LAND
-        ax.add_feature(land_feature, zorder=10)        
+        land_feature = cfeature.NaturalEarthFeature('physical', 'land', **dland)
+        #else:
+        #    land_feature = cfeature.LAND
+        ax.add_feature(land_feature,  zorder=0)
     if coast_resolution is not None:
         ax.coastlines(resolution=coast_resolution, color='k')
+        
 
     if set_extent:
         ax.set_extent(_extent)
