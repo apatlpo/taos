@@ -15,6 +15,8 @@ import time
 import pyproj
 
 import urllib.request
+import ipywidgets as widgets
+from IPython.display import display, clear_output
 
 from .utils import plot_bs
 
@@ -283,7 +285,7 @@ def plot_deployments_route(lon, lat, df, arrows=True, **kwargs):
     """ Plot deployment routes as compute from deployments_route_schedule
     """
 
-    dkwargs = dict(bathy=False, zoom=[-.32, -.2, 49.29, 49.36], vmax=30, figsize=(10,10))
+    dkwargs = dict(bathy=True, zoom=[-.32, -.2, 49.29, 49.36], vmax=30, figsize=(10,10))
     dkwargs.update(kwargs)
     fac = plot_bs(**dkwargs)
     ax = fac["ax"]
@@ -308,8 +310,6 @@ def plot_deployments_route(lon, lat, df, arrows=True, **kwargs):
     for i in range(lon.size):
         ax.text(lon[i]+1e-3, lat[i], f"{i}", transform=ccrs.PlateCarree())   
 
-    ax.set_aspect("equal")
-    ax.grid()
 
 # ---------------------------- deployment geometry -------------------------------
 
@@ -403,15 +403,14 @@ def build_square_geo(lon_a, lat_a, L, theta, **kwargs):
 
 # ---------------------------- drifter data -------------------------------
 
-
-
-def fetch_drifter_data(timestamp=True, verbose=True):
+def fetch_drifter_data(timestamp=True, verbose=True, alldata=True):
     """ fetch drifter data from pacific gyre website"""
 
     with open('pacific_url', 'r') as f:
         # do things with your file
         url = f.read().strip()
-
+    if alldata:
+        url = url.replace("&maxRowsEach=2", "")
     if timestamp:
         t = now()
         tstamp = "_"+t.strftime("%Y%m%d_%H%M%S")
@@ -434,25 +433,43 @@ def find_latest_drifter_file():
     latest_file = drifter_files[mtimes.index(max(mtimes))]
     return latest_file
 
-def load_drifter_data(file=None):
+def load_drifter_data(last=None, file=None):
     """Load drifter data into a dict of dataframes"""
-    if file is None:
+    if last is None and file is None:
+        # concatenate all files
+        local_dir = os.getcwd()
+        drifter_files = glob(os.path.join(local_dir,"drifter_data*.csv"))
+        DR = [load_drifter_data(file=f) for f in drifter_files]
+        drifter_ids = set(sum([list(dr) for dr in DR], []))
+        dr = dict()
+        for i in drifter_ids:
+            dr[i] = pd.concat([_dr[i] for _dr in DR if i in _dr]).drop_duplicates().sort_index()
+        return dr
+    # load just one file
+    if last:
+        # load last file
         file = find_latest_drifter_file()
+    #
     df = pd.read_csv(file, parse_dates=["DeviceDateTime"])
     dr = {k: v.sort_values("DeviceDateTime") for k, v in df.groupby("CommId")}
+    #
     for k, v in dr.items():
-        # compute local coordinates x, y
-        v.loc[:,["x", "y"]] = v.apply(lambda r: pd.Series(ll2xy(r["Longitude"], r["Latitude"]), index=["x","y"]),
-                                      axis=1)
-        # compute velocity
-        #print(dr[anchor]["DeviceDateTime"].diff()/pd.Timedelta("1s"))
-        v.loc[:,"dt"] = v.DeviceDateTime.diff()/pd.Timedelta("1s")
-        v.loc[:,"u"] = v.x.diff()/v.dt
-        v.loc[:,"v"] = v.y.diff()/v.dt
+        add_xy_uv(v)
         dr[k] = (v.rename(columns=dict(Longitude="longitude", Latitude="latitude", DeviceDateTime="time"))
                  .set_index("time")
                 )
     return dr
+
+def add_xy_uv(df):
+    """derive variables from drifter data"""
+    # compute local coordinates x, y
+    df.loc[:,["x", "y"]] = df.apply(lambda r: pd.Series(ll2xy(r["Longitude"], r["Latitude"]), index=["x","y"]),
+                                  axis=1)
+    # compute velocity
+    df.loc[:,"dt"] = df.DeviceDateTime.diff()/pd.Timedelta("1s")
+    df.loc[:,"u"] = df.x.diff()/df.dt
+    df.loc[:,"v"] = df.y.diff()/df.dt
+    return df
 
 def extrapolate_one(df, time):
     """Extrapolate positions for one drifter"""
@@ -471,3 +488,280 @@ def extrapolate(dr, time=None):
     if time is None:
         time = now()
     return {k: extrapolate_one(df, time) for k, df in dr.items()}
+
+
+# ---------------------------- drifter monitoring ---------------------------------------
+
+def monitor_drifters(refresh_time=5, **kwargs):
+    """Continuous monitoring of drifter positions
+    Stop with `Control-C`
+    
+    Parameters
+    ----------
+    refresh_time: float
+        Minutes between refreshes
+    **kwargs passed to plot_bs, e.g.:
+        zoom=[-.35, -.1, 49.28, 49.45], ...
+    """
+
+    refresh_time = refresh_time*60 # converts to seconds
+
+    dkwargs = dict(bathy=True, zoom=[-.35, -.1, 49.28, 49.45], vmax=30, figsize=(10,10))
+    dkwargs.update(**kwargs)
+
+    # init figure
+    fac = plot_bs(**dkwargs)
+    fig, ax = fac["fig"], fac["ax"]
+
+    first = True
+    while True:
+
+        clear_output(wait=True)
+
+        # print useful data:
+        _now = now().strftime("%Y/%m/%d %H:%M:%S")
+        print(f" Update at {_now}:")
+
+        # fetch data from PacificGyre website
+        fetch_drifter_data(alldata=first)
+
+        # load all files
+        dr = load_drifter_data()
+
+        # add fake drifters # dev
+        if False:
+            d = dr["0-4351896"]
+            dt = (d.index - d.index[0])/pd.Timedelta("1s")
+            d.loc[:,"longitude"] = -0.2 + 2*1*dt.values/111e3
+            d.loc[:,"latitude"] = 49.35 + 2*0.25*dt.values/111e3
+            dr["fake"] = d
+
+        # extrapolate
+        dr_now = extrapolate(dr)
+        #dr_now = extrapolate(dr, time=dr["fake"].index[-1]+pd.Timedelta("10min")) # dev
+
+        for key, d in dr.items():
+            _dl = d.iloc[-1]
+            _tl = d.index[-1].strftime("%Y/%m/%d")
+            _dn = dr_now[key]
+            _tn = _dn.time.strftime("%Y/%m/%d")
+            print(f" {key} last: t={_tl} lon={_dl.longitude:.4f}, lat={_dl.latitude:.4f}")
+            print(f"        now: t={_tl} lon={_dn.longitude:.4f}, lat={_dn.latitude:.4f}")
+
+        # plot data
+        fac = plot_bs(fig=fig, **dkwargs)
+        ax = fac["ax"]
+        ax.set_title(f"{_now}")
+
+        for key, d in dr.items():
+            #if key=="fake": # dev
+            ax.scatter(d.longitude, d.latitude, 40, color="orange", transform=ccrs.PlateCarree())
+            ax.plot(d.longitude, d.latitude, lw=2, color="orange", transform=ccrs.PlateCarree())
+            _lons, _lats = d.iloc[0,:].loc[["longitude", "latitude"]]
+            ax.text(_lons+1e-3, _lats, f"{key}", transform=ccrs.PlateCarree())
+            #
+            transform = ccrs.PlateCarree()._as_mpl_transform(ax)
+            dn = dr_now[key]
+            ax.annotate('', xy=(dn["longitude"], dn["latitude"]), 
+                        xytext=(d.iloc[-1]["longitude"], d.iloc[-1]["latitude"]),
+                        xycoords=transform,
+                        size=20,
+                        arrowprops=dict(facecolor='0.5', ec = 'none', 
+                                        #arrowstyle="fancy",
+                                        connectionstyle="arc3,rad=-0.3"),
+                       )
+
+        display(fig)
+        fig.clf()
+
+        # goes to sleep for a bit
+        time.sleep(refresh_time)
+        first=False
+
+# ---------------------------- drifter data; manual logggin -----------------------------
+
+class dashboard_log(object):
+    
+    def __init__(self, devices=None, log_path=None):
+        if devices is None:
+            devices=[]
+        self.devices=devices # devices
+        #
+        self.build_dashboard()
+        self.update() # time, devices
+        if log_path is None:
+            log_path = 'dashboard.log'
+        self.log = log_path
+
+    def build_dashboard(self):
+        
+        w = dict()
+
+        w["device"] = widgets.Dropdown(
+            options=self.devices,
+            value=None,
+            description='Device:',
+            disabled=False,
+        )
+
+        w["button"] = widgets.Button(
+            description='Register',
+            disabled=False,
+            button_style='', # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Click me',
+            icon='check' # (FontAwesome names without the `fa-` prefix)
+        )
+        w["button"].on_click(self.register)
+
+        w["date"] = widgets.DatePicker(
+            description='Pick a Date',
+            disabled=False
+        )
+
+        w["hour"] = widgets.Dropdown(
+            options=np.arange(24),
+            description='Hour:',
+            disabled=False,
+        )
+
+        w["minute"] = widgets.Dropdown(
+            options=np.arange(60),
+            description='Minute:',
+            disabled=False,
+        )
+
+        w["second"] = widgets.Dropdown(
+            options=np.arange(60),
+            description='Second:',
+            disabled=False,
+        )
+
+        w["lon_deg"] = widgets.Dropdown(
+            options=["0W"], # to be generalized
+            value="0W",
+            description='lon - deg:',
+            disabled=False,
+        )
+
+        w["lon_min"] = widgets.Dropdown(
+            options=np.arange(60),
+            value=15,
+            description='lon [min]:',
+            disabled=False,
+        )
+
+        w["lon_sec"] = widgets.FloatSlider(
+            value=0.,
+            min=0,
+            max=60.0,
+            step=0.1, # 0.1 sec = 2m
+            description='lon [sec]:',
+            disabled=False,
+            continuous_update=False,
+            orientation='horizontal',
+            readout=True,
+            readout_format='.1f',
+        )
+
+        w["lat_deg"] = widgets.Dropdown(
+            options=["49N"], # to be generalized
+            value="49N",
+            description='lat [deg]:',
+            disabled=False,
+        )
+
+        w["lat_min"] = widgets.Dropdown(
+            options=np.arange(60),
+            value=19,
+            description='lat [min]:',
+            disabled=False,
+        )
+
+        w["lat_sec"] = widgets.FloatSlider(
+            value=0.,
+            min=0,
+            max=60.0,
+            step=0.1, # 0.1 sec = 2m
+            description='lat - sec:',
+            disabled=False,
+            continuous_update=False,
+            orientation='horizontal',
+            readout=True,
+            readout_format='.1f',
+        )
+
+        #
+        grid = widgets.GridspecLayout(4, 3, height='200px', align_items="center")
+
+        grid[0, 0] = w["device"]
+        grid[0, 1] = w["button"]
+
+        #
+        grid[0, 2] = w["date"]
+        grid[1, 2] = w["hour"]
+        grid[2, 2] = w["minute"]
+        grid[3, 2] = w["second"]
+
+        #
+        grid[1, 0] = w["lon_deg"]
+        grid[2, 0] = w["lon_min"]
+        grid[3, 0] = w["lon_sec"]
+
+        #
+        grid[1, 1] = w["lat_deg"]
+        grid[2, 1] = w["lat_min"]
+        grid[3, 1] = w["lat_sec"]
+
+        # store
+        self.grid = grid
+        self.w = w
+        
+    def update(self):
+        _now = datetime.utcnow()
+        self.w["date"].value = _now
+        self.w["hour"].value = _now.hour
+        self.w["minute"].value = _now.minute
+        self.w["second"].value = _now.second
+                
+    def register(self, button):
+        w = self.w
+        #
+        date = w["date"].value
+        time = pd.Timestamp(year=date.year, month=date.month, day=date.day,
+                            hour=w["hour"].value, minute=w["minute"].value, second=w["second"].value,
+                           )
+        #
+        lond = w["lon_deg"].value
+        lon = float(lond[:-1])
+        if lond[-1]=="W":
+            sign = -1
+        else:
+            sign = 1
+        lon = sign * (lon + w["lon_min"].value/60 + w["lon_sec"].value/3600)
+        #
+        latd = w["lat_deg"].value
+        lat = float(latd[:-1])
+        if latd[-1]=="N":
+            sign = 1
+        else:
+            sign = -1
+        lat = sign * (lat + w["lat_min"].value/60 + w["lat_sec"].value/3600)
+        #
+        s = pd.Series(dict(device=w["device"].value,
+                           time=time,
+                           lon=lon,
+                           lat=lat,
+                          )
+                     )
+        # store
+        (s.to_frame().T
+         .rename_axis('event')
+         .to_csv(self.log, mode='a', header=not os.path.exists(self.log))
+        )
+        
+    def load_log(self):
+        """load log file"""
+        df = pd.read_csv(d.log, parse_dates=["time"])
+        return df
+
+    

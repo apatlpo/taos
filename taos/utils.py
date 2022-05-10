@@ -383,8 +383,9 @@ def plot_bs(da=None,
         _figsize = (20, 10)
     else:
         _figsize = figsize
-    if fig is None and ax is None:
+    if fig is None:
         fig = plt.figure(figsize=_figsize)
+    if ax is None:
         ax = fig.add_subplot(111, projection=ccrs.Orthographic(0., 49.5))
 
     # copy kwargs for update
@@ -396,7 +397,7 @@ def plot_bs(da=None,
         kwargs["vmin"] = vmin
         kwargs["vmax"] = vmax        
 
-    if bathy is not None:
+    if bathy:
         da = load_bathy()
         da = da.rename(lon="longitude", lat="latitude")
         if "vmax" not in kwargs:
@@ -447,7 +448,7 @@ def plot_bs(da=None,
     if set_extent:
         ax.set_extent(_extent)
 
-    if colorbar:
+    if da is not None and colorbar:
         #cbar = fig.colorbar(im, extend="neither", shrink=0.7, **colorbar_kwargs)
         axins = inset_axes(ax,
                width="5%",  # width = 5% of parent_bbox width
