@@ -42,14 +42,14 @@ proj = pyproj.Proj(proj="aeqd", lat_0=latc, lon_0=lonc, datum="WGS84", units="m"
 
 def ll2xy(lon, lat):
     return proj.transform(lon, lat)
-    
+
 def xy2ll(x, y):
     _inv_dir = pyproj.enums.TransformDirection.INVERSE
     return proj.transform(x, y, direction=_inv_dir)
 
 def metrics_cheatsheet(lon, lat):
     """print useful info for navigation"""
-    
+
     proj = pyproj.Proj(proj="aeqd", lat_0=lat, lon_0=lon, datum="WGS84", units="m")
 
     def dl(dlon, dlat):
@@ -76,7 +76,7 @@ def metrics_cheatsheet(lon, lat):
     print(f" lat: 1 deg = {dl(0,1)/1e3:.2f}km,  1 sec = {dl(0,1/3600):.1f}m"+ \
           f",  .1 sec = {dl(0,.1/3600):.1f}m"
          )
-    
+
 def deg_mindec(v):
     deg = np.trunc(v)
     mind = abs(v - deg)*60
@@ -97,7 +97,7 @@ def _match_displacements(x, dX, Uo, speed, t_wait):
 
 def solve_route_heading(dX, speed, Uo, time_waiting, time_max=1, **kwargs):
     """ Solve where we need to head given:
-    
+
     Parameters
     ----------
     dX: complex
@@ -110,7 +110,7 @@ def solve_route_heading(dX, speed, Uo, time_waiting, time_max=1, **kwargs):
         time we wish to wait at the deployment point (seconds)
     dt_max
     **kwargs: sent to optimizing method
-    
+
     Returns
     -------
     theta: float
@@ -136,14 +136,14 @@ def solve_route_heading(dX, speed, Uo, time_waiting, time_max=1, **kwargs):
 
     # global optimization
     bounds = [(-1.1*np.pi, np.pi), (1., 3600*time_max)]
-    minopts = dict(sampling_method='sobol') # options=dict(f_tol=1), 
+    minopts = dict(sampling_method='sobol') # options=dict(f_tol=1),
     minopts.update(**kwargs)
     res = shgo(_match_displacements, bounds, (dX, Uo, speed, time_waiting), **minopts)
 
     theta, dt_route = res["x"]
     Us = speed*np.exp(1j*theta)
     X_launch = Us*dt_route
-    
+
     return theta, dt_route, dt_route+time_waiting, X_launch, Us
 
 def solve_route_heading_xr(label, *args):
@@ -171,13 +171,13 @@ def plot_route_solution(dX, Us, Uo, dt, time_waiting):
 
     ax.set_aspect("equal")
     ax.grid()
-    
-    
+
+
 
 def deployments_route_schedule(lon_ship, lat_ship, ship_speed,
                                lon_vertices, lat_vertices, time_waiting,
                                Uo,
-                               lon_a=None, lat_a=None, time_a=None, 
+                               lon_a=None, lat_a=None, time_a=None,
                                skip=0,
                               ):
     """ Compute and schedule a route for drifter deployments
@@ -204,11 +204,11 @@ def deployments_route_schedule(lon_ship, lat_ship, ship_speed,
         Otherwise, lon_a, lat_a corresponds to a passed position fix and this
         implies skip>0
     skip: int, optional
-        Number of vertex (deployments) to skip. 
+        Number of vertex (deployments) to skip.
         Default is 0 i.e. first deployment
     """
-    
-    # positions (initial, anchor, vertices)    
+
+    # positions (initial, anchor, vertices)
     x, y = ll2xy(lon_ship, lat_ship)
     #
     if lon_a is None:
@@ -231,14 +231,14 @@ def deployments_route_schedule(lon_ship, lat_ship, ship_speed,
         x_deployment, y_deployment = X_deployment.real, X_deployment.imag
         lon_deployment, lat_deployment = xy2ll(x_deployment, y_deployment)
         se = pd.Series(dict(time=time_deployment,
-                            #x=x_deployment, y=y_deployment, 
+                            #x=x_deployment, y=y_deployment,
                             lon=lon_deployment, lat=lat_deployment,
                             heading=theta_route,
                             dt_route=dt_route/60,
                             dt_total=dt_total/60,
                            ))
         return se, X_deployment, time_deployment
-            
+
     # "first" deployment is treated separately
     time_initial = now() # time where last position was recorded, to be updated
     # skip points if need be
@@ -254,7 +254,7 @@ def deployments_route_schedule(lon_ship, lat_ship, ship_speed,
         Uo_init = Uo
     # store initial position
     se = pd.Series(dict(time=time_initial,
-                        #x=x_deployment, y=y_deployment, 
+                        #x=x_deployment, y=y_deployment,
                         lon=lon_ship, lat=lat_ship,
                         heading=np.NaN,
                         dt_route=np.NaN,
@@ -265,7 +265,7 @@ def deployments_route_schedule(lon_ship, lat_ship, ship_speed,
     # compute route to first deployment
     se, X_deployment, time_deployment = _route_core(_dX, Uo_init, x+1j*y, time_initial)
     S.append(se)
-    
+
     # following deployments
     dX = np.diff(X)
     for dx in dX:
@@ -276,10 +276,10 @@ def deployments_route_schedule(lon_ship, lat_ship, ship_speed,
 
     # concatenate results
     df = pd.DataFrame(S, index=pd.Index(np.arange(skip-1, skip+X.size), name="deployment"))
-    
+
     # add degrees and minute with decimals
     to_deg_mindec(df, "lon", "lat")
-    
+
     return df
 
 def plot_deployments_route(lon, lat, df, arrows=True, **kwargs):
@@ -298,22 +298,24 @@ def plot_deployments_route(lon, lat, df, arrows=True, **kwargs):
     if arrows:
         transform = ccrs.PlateCarree()._as_mpl_transform(ax)
         for i in df.index[:-1]:
-            ax.annotate('', xy=(df.loc[i+1, "lon"], df.loc[i+1, "lat"]), 
+            ax.annotate('', xy=(df.loc[i+1, "lon"], df.loc[i+1, "lat"]),
                         xytext=(df.loc[i, "lon"], df.loc[i, "lat"]),
                         xycoords=transform,
                         size=20,
-                        arrowprops=dict(facecolor='0.5', ec = 'none', 
+                        arrowprops=dict(facecolor='0.5', ec = 'none',
                                         #arrowstyle="fancy",
                                         connectionstyle="arc3,rad=-0.3"),
                        )
 
     # labels
     for i in range(lon.size):
-        ax.text(lon[i]+1e-3, lat[i], f"{i}", transform=ccrs.PlateCarree())   
+        ax.text(lon[i]+1e-3, lat[i], f"{i}", transform=ccrs.PlateCarree())
+
+    return fac
 
 
 class dashboard_route(object):
-    
+
     def __init__(self, lon, lat, **kwargs):
         #
         self.lon_vertices = lon
@@ -329,12 +331,13 @@ class dashboard_route(object):
 
 
     def build_dashboard(self, **kwargs):
-        
-        dkwargs = dict(ship_speed=5., square_radius=1., square_theta=0., square_center=2, time_waiting=1.)
+
+        #dkwargs = dict(ship_speed=5., square_radius=1., square_theta=0., square_center=2, time_waiting=1.)
+        dkwargs = dict(ship_speed=5., time_waiting=1.)
         dkwargs.update(**kwargs)
-        
+
         w = dict()
-        
+
         w["button"] = widgets.Button(
             description='Update',
             disabled=False,
@@ -343,7 +346,7 @@ class dashboard_route(object):
             icon='check' # (FontAwesome names without the `fa-` prefix)
         )
         w["button"].on_click(self.update)
-        
+
         w["ship_speed"] = widgets.FloatSlider(
             value=dkwargs["ship_speed"],
             min=1.,
@@ -356,7 +359,7 @@ class dashboard_route(object):
             readout=True,
             readout_format='.1f',
         )
-        
+
         w["current_speed_x"] = widgets.BoundedFloatText(
                 value=0.,
                 min=-1.,
@@ -365,7 +368,7 @@ class dashboard_route(object):
                 description='Current speed x [m/s]:',
                 disabled=False
         )
-        
+
         #widgets.FloatSlider(
         #    value=0.,
         #    min=-2.,
@@ -387,7 +390,7 @@ class dashboard_route(object):
                 description='Current speed y [m/s]:',
                 disabled=False
             )
-        
+
         #widgets.FloatSlider(
         #    value=0.,
         #    min=-2.,
@@ -400,10 +403,10 @@ class dashboard_route(object):
         #    readout=True,
         #    readout_format='.2f',
         #)
-        
+
         _now = datetime.utcnow()
         self.now = _now
-        
+
         _lon_deg, _lon_min = deg_mindec(self.lon_vertices[0])
         _lat_deg, _lat_min = deg_mindec(self.lat_vertices[0])
         for suff in ["ship", "anchor"]:
@@ -416,21 +419,21 @@ class dashboard_route(object):
             )
 
             w[suff+"_lon_min"] = widgets.BoundedFloatText(
-                value=_lon_min,
+                value=round(_lon_min, ndigits=3),
                 min=0.,
                 max=60.0,
                 step=0.001,
                 description='lon min dec:',
                 disabled=False
             )
-            
+
             #widgets.Dropdown(
             #    options=np.arange(60),
             #    value=15,
             #    description=suff+' lon [min]:',
             #    disabled=False,
             #)
-                        
+
             #w[suff+"_lon_sec"] = widgets.FloatSlider(
             #    value=0,
             #    min=0,
@@ -451,16 +454,15 @@ class dashboard_route(object):
                 disabled=False,
             )
 
-            
             w[suff+"_lat_min"] = widgets.BoundedFloatText(
-                value=_lat_min,
+                value=round(_lat_min, ndigits=3),
                 min=0.,
                 max=60.0,
                 step=0.001,
                 description='lat min dec:',
                 disabled=False
             )
-            
+
             #w[suff+"_lat_min"] = widgets.Dropdown(
             #    options=np.arange(60),
             #    value=19,
@@ -480,7 +482,7 @@ class dashboard_route(object):
                 readout=True,
                 readout_format='.1f',
             )
-            
+
             w[suff+"_hour"] = widgets.Dropdown(
                 options=np.arange(24),
                 description=suff+' hour:',
@@ -501,41 +503,41 @@ class dashboard_route(object):
                 disabled=False,
                 value=_now.second,
             )
-            
 
-        w["square_radius"] = widgets.FloatSlider(
-            value=dkwargs["square_radius"],
-            min=.1,
-            max=10.0,
-            step=0.1, # 0.1 sec = 2m
-            description='Square radius [km]:',
-            disabled=False,
-            continuous_update=False,
-            orientation='horizontal',
-            readout=True,
-            readout_format='.1f',
-        )
-            
-        w["square_theta"] = widgets.FloatSlider(
-            value=dkwargs["square_theta"],
-            min=-90.,
-            max=90.0,
-            step=2., # 0.1 sec = 2m
-            description='Square orientation [deg]:',
-            disabled=False,
-            continuous_update=False,
-            orientation='horizontal',
-            readout=True,
-            readout_format='.0f',
-        )
 
-        w["square_center"] = widgets.Dropdown(
-            options=np.arange(5),
-            value=dkwargs["square_center"],
-            description='Center index',
-            disabled=False,
-        )
-        
+        # w["square_radius"] = widgets.FloatSlider(
+        #     value=dkwargs["square_radius"],
+        #     min=.1,
+        #     max=10.0,
+        #     step=0.1, # 0.1 sec = 2m
+        #     description='Square radius [km]:',
+        #     disabled=False,
+        #     continuous_update=False,
+        #     orientation='horizontal',
+        #     readout=True,
+        #     readout_format='.1f',
+        # )
+        #
+        # w["square_theta"] = widgets.FloatSlider(
+        #     value=dkwargs["square_theta"],
+        #     min=-90.,
+        #     max=90.0,
+        #     step=2., # 0.1 sec = 2m
+        #     description='Square orientation [deg]:',
+        #     disabled=False,
+        #     continuous_update=False,
+        #     orientation='horizontal',
+        #     readout=True,
+        #     readout_format='.0f',
+        # )
+        #
+        # w["square_center"] = widgets.Dropdown(
+        #     options=np.arange(5),
+        #     value=dkwargs["square_center"],
+        #     description='Center index',
+        #     disabled=False,
+        # )
+
         w["time_waiting"] = widgets.FloatSlider(
             value=dkwargs["time_waiting"],
             min=1.,
@@ -547,16 +549,16 @@ class dashboard_route(object):
             orientation='horizontal',
             readout=True,
             readout_format='.0f',
-        )        
-        
+        )
+
         w["skip"] = widgets.Dropdown(
             options=np.arange(5),
             value=0,
             description='Skip index',
             disabled=False,
         )
-            
-            
+
+
         #
         grid = widgets.GridspecLayout(10, 3, height='400px', align_items="center")
 
@@ -581,7 +583,7 @@ class dashboard_route(object):
             grid[i, 1] = w[suff+"_lat_min"]
             #grid[i, 2] = w[suff+"_lat_sec"]
             i+=1
-            
+
             # time
             if suff!="ship":
                 grid[i, 0] = w[suff+"_hour"]
@@ -589,22 +591,22 @@ class dashboard_route(object):
                 grid[i, 2] = w[suff+"_second"]
                 i+=1
 
-        grid[i, 0] = w["square_radius"]
-        grid[i, 1] = w["square_theta"]
-        grid[i, 2] = w["square_center"]
-        i+=1
+        #grid[i, 0] = w["square_radius"]
+        #grid[i, 1] = w["square_theta"]
+        #grid[i, 2] = w["square_center"]
+        #i+=1
 
         grid[i, 0] = w["time_waiting"]
         grid[i, 1] = w["skip"]
-            
+
         # store
         self.grid = grid
         self.w = w
-        
+
     def update(self, button):
         #_now = datetime.utcnow()
         w = self.w
-        
+
         #self.w["date"].value = _now
         #self.w["hour"].value = _now.hour
         #self.w["minute"].value = _now.minute
@@ -633,17 +635,19 @@ class dashboard_route(object):
         time_waiting = w["time_waiting"].value*60. # converts to seconds
         date = self.now
         time_a = pd.Timestamp(year=date.year, month=date.month, day=date.day,
-                              hour=w["anchor_hour"].value, minute=w["anchor_minute"].value, second=w["anchor_second"].value,
+                              hour=w["anchor_hour"].value, minute=w["anchor_minute"].value,
+                              second=w["anchor_second"].value,
                              )
-        df = deployments_route_schedule(ll["ship"]["lon"], ll["ship"]["lat"], 
+        df = deployments_route_schedule(ll["ship"]["lon"], ll["ship"]["lat"],
                                             w["ship_speed"].value*knot,
                                             self.lon_vertices, self.lat_vertices,
                                             time_waiting,
                                             ocean_current,
-                                            ll["anchor"]["lon"], ll["anchor"]["lat"], time_a=time_a,
+                                            ll["anchor"]["lon"], ll["anchor"]["lat"],
+                                            time_a=time_a,
                                             skip=w["skip"].value,
                                             )
-                
+
         with self.out:
             clear_output()
             print(f"New hello from each button click!. This hello from {self.update_num}")
@@ -659,7 +663,7 @@ class dashboard_route(object):
                       f"at {time}")
             print(df)
             self.update_num+=1
-        
+
         self.df = df
 
 
@@ -667,7 +671,7 @@ class dashboard_route(object):
 
 def build_polygon(L, theta, N, rotation=1):
     """build a polygon with radius L and rotation angle theta
-    
+
     Parameters
     ----------
     L: float
@@ -685,7 +689,7 @@ def build_polygon(L, theta, N, rotation=1):
 
 def build_square_with_center(L, theta, rotation=1, center_loc=1):
     """ build a square with center
-    
+
     Parameters
     ----------
     L: float
@@ -718,14 +722,14 @@ def plot_polygon(X, dX=None):
             ax.arrow(X[i].real, X[i].imag, dX[i].real, dX[i].imag, fc="k", **opt)
 
     for i in range(X.size):
-        ax.text(X[i].real+100, X[i].imag, f"{i}")    
+        ax.text(X[i].real+100, X[i].imag, f"{i}")
 
     ax.set_aspect("equal")
     ax.grid()
-    
+
 def build_square_geo(lon_a, lat_a, L, theta, **kwargs):
     """build square geographic coordinates, along with other useful informations
-    
+
     Parameters
     ----------
     lon_a, lat_a: floats
@@ -735,7 +739,7 @@ def build_square_geo(lon_a, lat_a, L, theta, **kwargs):
     theta: float
         rotation angle of the first vertex
     **kwargs: passed to build_square_with_center
-    
+
     Returns
     -------
     lon, lat: np.array
@@ -752,7 +756,38 @@ def build_square_geo(lon_a, lat_a, L, theta, **kwargs):
     lon, lat = xy2ll(x, y)
     return lon, lat, x + 1j*y
 
-def radiator(R, N, theta):
+def radiator(R, N, theta, lonc, latc):
+    """Build a radiator (geodetic version)
+
+    Parameters
+    ----------
+    R: float
+        Radius in meters
+    N: int
+        Number of segments (odd preferentially)
+    theta: float
+        Orientation angle in radians
+
+    Returns
+    -------
+    lon, lat: np.array
+        Vertex coordinates
+    length: float
+        Length of the radiators in meters
+    dX: np.array
+        vertex position in projected coordinates
+    """
+    dX, length = radiator_xy(R, N, theta)
+
+    # convert to lon/lat
+    xc, yc = ll2xy(lonc, latc)
+    x = xc + dX.real
+    y = yc + dX.imag
+    lon, lat = xy2ll(x, y)
+
+    return lon, lat, length, dX
+
+def radiator_xy(R, N, theta):
     """Build a radiator:
 
     Parameters
@@ -763,7 +798,7 @@ def radiator(R, N, theta):
         Number of segments (odd preferentially)
     theta: float
         Orientation angle in radians
-        
+
     Returns
     -------
     X: np.array
@@ -803,14 +838,14 @@ def fetch_drifter_data(timestamp=True, verbose=True, alldata=True):
     else:
         tstamp = ""
     file = "drifter_data"+tstamp+".csv"
-    
+
     urllib.request.urlretrieve(url, file)
-    
+
     if verbose:
         print(f" Drifter data downloaded as {file}")
-        
+
     return file
-    
+
 def find_latest_drifter_file():
     """find latest drifter file"""
     local_dir = os.getcwd()
@@ -891,8 +926,8 @@ def show_last_positions(dr, dr_now, **kwargs):
         time = dl.name.strftime("%Y/%m/%d %H:%M:%S")
         print(f" drifter {key}: {_lon_deg}{EW} {_lon_min:.3f}  {_lat_deg}N {_lat_min:.3f} "\
               f" speed=({dl.u:.2f}, {dl.v:.2f}) at {time}")
-    
-    dkwargs = dict(bathy=False, zoom=[-.4, -.1, 49.27, 49.4], vmax=30, figsize=(10,10), 
+
+    dkwargs = dict(bathy=False, zoom=[-.4, -.1, 49.27, 49.4], vmax=30, figsize=(10,10),
                    land=dict(scale="10m"), coast_resolution=None)
     dkwargs.update(**kwargs)
     fac = plot_bs(**dkwargs)
@@ -905,7 +940,7 @@ def show_last_positions(dr, dr_now, **kwargs):
 def monitor_drifters(refresh_time=5, **kwargs):
     """Continuous monitoring of drifter positions
     Stop with `Control-C`
-    
+
     Parameters
     ----------
     refresh_time: float
@@ -972,11 +1007,11 @@ def monitor_drifters(refresh_time=5, **kwargs):
             #
             transform = ccrs.PlateCarree()._as_mpl_transform(ax)
             dn = dr_now[key]
-            ax.annotate('', xy=(dn["longitude"], dn["latitude"]), 
+            ax.annotate('', xy=(dn["longitude"], dn["latitude"]),
                         xytext=(d.iloc[-1]["longitude"], d.iloc[-1]["latitude"]),
                         xycoords=transform,
                         size=20,
-                        arrowprops=dict(facecolor='0.5', ec = 'none', 
+                        arrowprops=dict(facecolor='0.5', ec = 'none',
                                         #arrowstyle="fancy",
                                         connectionstyle="arc3,rad=-0.3"),
                        )
@@ -991,7 +1026,7 @@ def monitor_drifters(refresh_time=5, **kwargs):
 # ---------------------------- drifter data; manual logging -----------------------------
 
 class dashboard_log(object):
-    
+
     def __init__(self, devices=None, log_path=None):
         if devices is None:
             devices=[]
@@ -1004,7 +1039,7 @@ class dashboard_log(object):
         self.log = log_path
 
     def build_dashboard(self):
-        
+
         w = dict()
 
         w["device"] = widgets.Dropdown(
@@ -1125,14 +1160,14 @@ class dashboard_log(object):
         # store
         self.grid = grid
         self.w = w
-        
+
     def update(self):
         _now = datetime.utcnow()
         self.w["date"].value = _now
         self.w["hour"].value = _now.hour
         self.w["minute"].value = _now.minute
         self.w["second"].value = _now.second
-                
+
     def register(self, button):
         w = self.w
         #
@@ -1168,10 +1203,8 @@ class dashboard_log(object):
          .rename_axis('event')
          .to_csv(self.log, mode='a', header=not os.path.exists(self.log))
         )
-        
+
     def load_log(self):
         """load log file"""
         df = pd.read_csv(d.log, parse_dates=["time"])
         return df
-
-    
