@@ -333,7 +333,9 @@ class dashboard_route(object):
     def build_dashboard(self, **kwargs):
 
         #dkwargs = dict(ship_speed=5., square_radius=1., square_theta=0., square_center=2, time_waiting=1.)
-        dkwargs = dict(ship_speed=5., time_waiting=1.)
+        dkwargs = dict(ship_speed=5., time_waiting=1.,
+                       current_speed_x=0.02, current_speed_y=0.,
+                       )
         dkwargs.update(**kwargs)
 
         w = dict()
@@ -361,9 +363,9 @@ class dashboard_route(object):
         )
 
         w["current_speed_x"] = widgets.BoundedFloatText(
-                value=0.,
-                min=-1.,
-                max=1.,
+                value=dkwargs["current_speed_x"],
+                min=-2.,
+                max=2.,
                 step=0.02,
                 description='Current speed x [m/s]:',
                 disabled=False
@@ -383,9 +385,9 @@ class dashboard_route(object):
         #)
 
         w["current_speed_y"] = widgets.BoundedFloatText(
-                value=0.,
-                min=-1.,
-                max=1.,
+                value=dkwargs["current_speed_y"],
+                min=-2.,
+                max=2.,
                 step=0.02,
                 description='Current speed y [m/s]:',
                 disabled=False
@@ -677,7 +679,7 @@ def build_polygon(L, theta, N, rotation=1):
     L: float
         Radius
     theta: float
-        rotation angle of the first vertex
+        rotation angle of the first vertex [radians]
     N: int
         Number of vertices
     rotation: -1,1
@@ -695,7 +697,7 @@ def build_square_with_center(L, theta, rotation=1, center_loc=1):
     L: float
         Radius
     theta: float
-        rotation angle of the first vertex
+        rotation angle of the first vertex [radians]
     N: int
         Number of vertices
     rotation: -1,1
@@ -737,7 +739,7 @@ def build_square_geo(lon_a, lat_a, L, theta, **kwargs):
     L: float
         Radius
     theta: float
-        rotation angle of the first vertex
+        rotation angle of the first vertex [radians]
     **kwargs: passed to build_square_with_center
 
     Returns
