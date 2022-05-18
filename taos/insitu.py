@@ -915,8 +915,21 @@ def extrapolate(dr, time=None):
 
 # ---------------------------- drifter monitoring ---------------------------------------
 
-def show_last_positions(dr, dr_now, **kwargs):
-    """ Show last positions """
+def show_last_positions(dr, dr_now, offset="1h", **kwargs):
+    """ Show last positions
+    
+    Parameters
+    ----------
+    dr: dict
+        Dictionary of drifter dataframes
+    dr_now: dict
+        Dictionary of extrapolated positions (not used at the moment)
+    offset: str
+        Time offset specifying last amount of data shown
+    **kwargs: passed to plot_bs
+    """
+    from .utils import get_cmap_colors
+    
     for key, d in dr.items():
         dl = d.iloc[-1]
         _lon_deg, _lon_min = deg_mindec(dl.longitude)
@@ -934,10 +947,13 @@ def show_last_positions(dr, dr_now, **kwargs):
     dkwargs.update(**kwargs)
     fac = plot_bs(**dkwargs)
     ax = fac["ax"]
+    
+    colors = {key: c for key, c in zip(dr, get_cmap_colors(len(dr)))}
     for key, d in dr.items():
-        dl = d.iloc[-1]
-        ax.scatter(dl.longitude, dl.latitude, 30, color="orange", transform=ccrs.PlateCarree())
-        ax.text(dl.longitude+1e-3, dl.latitude, f"{key}", transform=ccrs.PlateCarree())
+        dl = d.last(offset)
+        ax.scatter(dl.longitude, dl.latitude, 30, color=colors[key], transform=ccrs.PlateCarree())
+        ax.scatter(dl.longitude, dl.latitude, 30, color=colors[key], transform=ccrs.PlateCarree())
+        ax.text(dl.longitude[-1]+1e-3, dl.latitude[-1], f"{key}", transform=ccrs.PlateCarree())
 
 def monitor_drifters(refresh_time=5, **kwargs):
     """Continuous monitoring of drifter positions
