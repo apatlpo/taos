@@ -6,6 +6,15 @@
 
 See [equinox doc](https://github.com/apatlpo/mit_equinox/blob/master/doc/conda.md)
 
+More targeted environment:
+
+```
+conda create -n cognac -c conda-forge python=3.8 xarray graphviz netCDF4 dask-jobqueue jupyterlab ipywidgets hvplot geoviews datashader nodejs folium cartopy gsw cmocean pytide xgcm
+conda activate cognac
+pip install pynmea2
+pip install geojsoncontour
+```
+
 ## Ichtyop install
 
 ### datarmor
