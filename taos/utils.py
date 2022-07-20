@@ -26,8 +26,8 @@ knot = 0.514
 
 def load_bathy():
 
-    gebco_dir  = "/Users/aponte/Data/bathy/gebco_baie_de_seine/"
-    nc = os.path.join(gebco_dir, 
+    gebco_dir  = "/Users/aponte/Data/bathy/gebco2020_baie_de_seine/"
+    nc = os.path.join(gebco_dir,
         "gebco_2020_n50.173379057995874_s48.94860405517183_w-2.039721447010817_e0.5888341359731002.nc")
 
     ds = xr.open_dataset(nc)
@@ -35,7 +35,7 @@ def load_bathy():
     da = -da.where(da<0)
 
     return da
-        
+
 # ---------------------------- tides ------------------------------------
 
 def _harmonic_analysis(data, f=None, vu=None, wt=None):
@@ -46,11 +46,11 @@ def _harmonic_analysis(data, f=None, vu=None, wt=None):
 
 def harmonic_analysis(da, constituents=[]):
     """ Distributed harmonic analysis
-    
+
     Parameters
     ----------
     da: xr.Dataarray
-    
+
     """
     #constituents = ["M2", "S2", "N2", "K2", "K1", "O1", "P1", "Q1", "S1", "M4"]
     wt = pytide.WaveTable(constituents) # not working on months like time series, need to restrict
@@ -68,14 +68,14 @@ def harmonic_analysis(da, constituents=[]):
                       )
     a = a.assign_coords(constituent=("constituent", wt.constituents()),
                         frequency=("constituent", wt.freq()*86400/2/np.pi),
-                        frequency_rad=("constituent", wt.freq()), 
+                        frequency_rad=("constituent", wt.freq()),
                        )
     return a.rename("amplitudes")
 
 def predict_tides(time,
                   har=None,
                   realimag=None,
-                  real=True, 
+                  real=True,
                   summed=True,
                   suffix="",
                   name="x",
@@ -83,11 +83,11 @@ def predict_tides(time,
                   ignore=None,
                  ):
     """ Predict tides based on pytide outputs
-    
-    v = Re ( conj(amplitude) * dsp.f * np.exp(1j*vu) ) 
-    
+
+    v = Re ( conj(amplitude) * dsp.f * np.exp(1j*vu) )
+
     see: https://pangeo-pytide.readthedocs.io/en/latest/pytide.html#pytide.WaveTable.harmonic_analysis
-    
+
     Parameters
     ----------
     time: xr.DataArray
@@ -117,12 +117,12 @@ def predict_tides(time,
     if suffix=="":
         suffix = name+"_"
 
-    constituents = list(har.constituent.values)    
-    wt = pytide.WaveTable(constituents) 
+    constituents = list(har.constituent.values)
+    wt = pytide.WaveTable(constituents)
 
     time = time.data.astype("datetime64")
-    f, vu = wt.compute_nodal_modulations(time)    
-        
+    f, vu = wt.compute_nodal_modulations(time)
+
     dsp = har.to_dataset().assign_coords(time=("time", time))
     _time = [(pd.Timestamp(t)-pd.Timestamp(1970,1,1)).total_seconds() for t in dsp.time.data]
     dsp = dsp.assign_coords(time_seconds=("time", _time))
@@ -131,28 +131,28 @@ def predict_tides(time,
     cplx =  dsp.f * np.exp(1j*dsp.vu) * np.conj(dsp[name])
     dsp[suffix+"real"] = np.real(cplx)
     dsp[suffix+"imag"] = np.imag(cplx)
-    
+
     if constituents is not None:
         dsp = dsp.sel(constituent=constituents)
     if ignore is not None:
         dsp = dsp.drop_sel(constituent=ignore)
-    
+
     if summed:
         dsp = dsp.sum("constituent").drop_vars(["f", "vu"])
     else:
         dsp["frequency"] = har["frequency"]
-        
+
     if real:
         dsp = dsp[suffix+"real"]
     else:
         dsp[suffix+"prediction"] = dsp[suffix+"real"]
         dsp[suffix+"prediction_quad"] = dsp[suffix+"imag"]
-        
+
     return dsp
 
 def compute_tidal_range(da, window=1):
     """ Compute tidal range over a rolling window
-    
+
     Parameters
     ----------
     da: xr.DataArray
@@ -168,7 +168,7 @@ def compute_tidal_range(da, window=1):
 
 def get_ellipse_properties(u, v):
     """ Compute tidal ellipse properties
-    
+
     Parameters
     ----------
     u, v: xr.DataArray
@@ -187,9 +187,9 @@ def get_ellipse_properties(u, v):
     return xr.merge([A, a, inclinaison, phase])
 
 def compute_plot_ellipses(u,v,lon,lat,xgrid,
-                          dij=10, 
-                          lon_ref=-.6, lat_ref=49.3, 
-                          u_ref=1., 
+                          dij=10,
+                          lon_ref=-.6, lat_ref=49.3,
+                          u_ref=1.,
                           v_ref=0.1*1j,
                           T = .5 * 12/2/np.pi/24*86400,
                          ):
@@ -227,18 +227,18 @@ def compute_plot_ellipses(u,v,lon,lat,xgrid,
 def plot_ellipses(ax, ds, markersize=1):
     ax.plot(ds["x"].T, ds["y"].T, color="k", transform=ms.ccrs.PlateCarree())
     # high tide
-    ax.plot(ds["x"].sel(time=0), 
-            ds["y"].sel(time=0), 
+    ax.plot(ds["x"].sel(time=0),
+            ds["y"].sel(time=0),
             "o", color="r", markersize=markersize,
             transform=ms.ccrs.PlateCarree())
     # 90deg (3 hours) before high tide
-    ax.plot(ds["x"].sel(time=3*np.pi/2, method="nearest"), 
+    ax.plot(ds["x"].sel(time=3*np.pi/2, method="nearest"),
             ds["y"].sel(time=3*np.pi/2, method="nearest"),
             "o", color="orange", markersize=markersize,
             transform=ms.ccrs.PlateCarree())
     #
     ax.plot(ds.x_ref, ds.y_ref, color="k", transform=ms.ccrs.PlateCarree(), zorder=20)
-    ax.text(ds.x_ref[0], ds.y_ref[0], "{} m/s".format(ds.u_ref), 
+    ax.text(ds.x_ref[0], ds.y_ref[0], "{} m/s".format(ds.u_ref),
             verticalalignment="center", transform=ms.ccrs.PlateCarree(), zorder=20)
 
 # ---------------------------- dask related ------------------------------------
@@ -346,7 +346,7 @@ def _reset_chunk_encoding(ds):
 
 def get_cmap_colors(Nc, cmap='plasma'):
     """ load colors from a colormap to plot lines
-    
+
     Parameters
     ----------
     Nc: int
@@ -359,7 +359,7 @@ def get_cmap_colors(Nc, cmap='plasma'):
     return [scalarMap.to_rgba(i) for i in range(Nc)]
 
 def plot_bs(da=None,
-            zoom=0, 
+            zoom=0,
             bathy=True,
             title=None,
             fig=None,
@@ -375,8 +375,8 @@ def plot_bs(da=None,
             figsize=0,
             **kwargs,
            ):
-    
-    #        
+
+    #
     if figsize==0:
         _figsize = (10, 5)
     elif figsize==1:
@@ -390,12 +390,12 @@ def plot_bs(da=None,
 
     # copy kwargs for update
     kwargs = kwargs.copy()
-    
+
     if center_colormap and da is not None:
         vmax = float(abs(da).max())
         vmin = -vmax
         kwargs["vmin"] = vmin
-        kwargs["vmax"] = vmax        
+        kwargs["vmax"] = vmax
 
     if bathy:
         da = load_bathy()
@@ -403,12 +403,12 @@ def plot_bs(da=None,
         if "vmax" not in kwargs:
             kwargs.update(vmax=50)
         kwargs.update(cmap=cm.deep)
-        
+
     if da is not None:
         im = (da
              .squeeze()
              .plot
-             .pcolormesh(x="longitude", y="latitude", 
+             .pcolormesh(x="longitude", y="latitude",
                          ax=ax,
                          transform=ccrs.PlateCarree(),
                          add_colorbar=False,
@@ -444,7 +444,7 @@ def plot_bs(da=None,
         ax.add_feature(land_feature,  zorder=0)
     if coast_resolution is not None:
         ax.coastlines(resolution=coast_resolution, color='k')
-        
+
 
     if set_extent:
         ax.set_extent(_extent)
@@ -458,18 +458,18 @@ def plot_bs(da=None,
                bbox_to_anchor=(1.05, 0., 1, 1),
                bbox_transform=ax.transAxes,
                borderpad=0,
-               )            
-        #cbar = fig.colorbar(im, extend="neither", shrink=0.9, 
+               )
+        #cbar = fig.colorbar(im, extend="neither", shrink=0.9,
         cbar = fig.colorbar(im,
                             extend="neither",
                             cax=axins,
-                            **colorbar_kwargs)            
+                            **colorbar_kwargs)
     else:
         cbar = None
 
     if gridlines:
-        gl = ax.gridlines(draw_labels=True, dms=False, 
-                     x_inline=False, y_inline=False, 
+        gl = ax.gridlines(draw_labels=True, dms=False,
+                     x_inline=False, y_inline=False,
                     )
         gl.right_labels=False
         gl.top_labels=False
