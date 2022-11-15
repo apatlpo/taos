@@ -26,6 +26,7 @@ __pycache__/
 # data files
 *.nc
 *.zarr
+*.csv
 
 # fig and movies
 *.png
@@ -53,3 +54,4 @@ jlab.pbs.o*
 *.nodefile
 
 sandbox/data
+pacific_url

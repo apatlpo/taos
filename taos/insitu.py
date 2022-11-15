@@ -652,7 +652,7 @@ class dashboard_route(object):
 
         with self.out:
             clear_output()
-            print(f"New hello from each button click!. This hello from {self.update_num}")
+            #print(f"New hello from each button click!. This hello from {self.update_num}")
             for label, r in df.iterrows():
                 _lon_deg, _lon_min = deg_mindec(r.lon)
                 _lat_deg, _lat_min = deg_mindec(r.lat)
@@ -661,9 +661,13 @@ class dashboard_route(object):
                 else:
                     EW="E"
                 time = r.time.strftime("%Y/%m/%d %H:%M:%S")
-                print(f" drifter {label}: {_lon_deg}{EW} {_lon_min:.3f}  {_lat_deg}N {_lat_min:.3f} "\
+                if label>-1:
+                    _suff = f"drifter {label}"
+                else:
+                    _suff = "ship position"
+                print(_suff+f": {_lon_deg}{EW} {_lon_min:.3f}  {_lat_deg}N {_lat_min:.3f} "\
                       f"at {time}")
-            print(df)
+            #print(df)
             self.update_num+=1
 
         self.df = df
@@ -917,7 +921,7 @@ def extrapolate(dr, time=None):
 
 def show_last_positions(dr, dr_now, offset="1h", **kwargs):
     """ Show last positions
-    
+
     Parameters
     ----------
     dr: dict
@@ -929,7 +933,7 @@ def show_last_positions(dr, dr_now, offset="1h", **kwargs):
     **kwargs: passed to plot_bs
     """
     from .utils import get_cmap_colors
-    
+
     for key, d in dr.items():
         dl = d.iloc[-1]
         _lon_deg, _lon_min = deg_mindec(dl.longitude)
@@ -947,7 +951,7 @@ def show_last_positions(dr, dr_now, offset="1h", **kwargs):
     dkwargs.update(**kwargs)
     fac = plot_bs(**dkwargs)
     ax = fac["ax"]
-    
+
     colors = {key: c for key, c in zip(dr, get_cmap_colors(len(dr)))}
     for key, d in dr.items():
         dl = d.last(offset)
