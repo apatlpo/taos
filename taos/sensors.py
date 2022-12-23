@@ -125,14 +125,12 @@ def read_lern_sonde(file, tz_offset=0, stype=0):
 def read_carthe_drifters(file):
     
     df = pd.read_csv(file, parse_dates=[1])
-    df["DeviceDateTime"]
     
     df = (df
           .rename(columns=dict(DeviceName="id", DeviceDateTime="time", 
                                Latitude="latitude", Longitude="longitude"))
           .sort_values("id")
          )
-    #df["id"] = df["id"].map(lambda v: v.replace("-",""))
     df = df.set_index("id")
         
     return df
