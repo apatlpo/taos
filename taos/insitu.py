@@ -924,7 +924,7 @@ def radiator_xy(R, N, theta):
 def fetch_drifter_data(timestamp=True, verbose=True, alldata=True):
     """fetch drifter data from pacific gyre website"""
 
-    with open("pacific_url", "r") as f:
+    with open("../../pacific_url", "r") as f:
         # do things with your file
         url = f.read().strip()
     if alldata:
@@ -1024,7 +1024,7 @@ def extrapolate(dr, time=None):
 # ---------------------------- drifter monitoring ---------------------------------------
 
 
-def show_last_positions(dr, dr_now, offset="1h", **kwargs):
+def show_last_positions(dr, dr_now, offset="1h", plot=False, **kwargs):
     """Show last positions
 
     Parameters
@@ -1053,41 +1053,42 @@ def show_last_positions(dr, dr_now, offset="1h", **kwargs):
             f" speed=({dl.u:.2f}, {dl.v:.2f}) at {time}"
         )
 
-    dkwargs = dict(
-        bathy=False,
-        zoom=[-0.4, -0.1, 49.27, 49.4],
-        vmax=30,
-        figsize=(10, 10),
-        land=dict(scale="10m"),
-        coast_resolution=None,
-    )
-    dkwargs.update(**kwargs)
-    fac = plot_bs(**dkwargs)
-    ax = fac["ax"]
+    if plot:
+        dkwargs = dict(
+            bathy=False,
+            zoom=[-0.4, -0.1, 49.27, 49.4],
+            vmax=30,
+            figsize=(10, 10),
+            land=dict(scale="10m"),
+            coast_resolution=None,
+        )
+        dkwargs.update(**kwargs)
+        fac = plot_bs(**dkwargs)
+        ax = fac["ax"]
 
-    colors = {key: c for key, c in zip(dr, get_cmap_colors(len(dr)))}
-    for key, d in dr.items():
-        dl = d.last(offset)
-        ax.scatter(
-            dl.longitude,
-            dl.latitude,
-            30,
-            color=colors[key],
-            transform=ccrs.PlateCarree(),
-        )
-        ax.scatter(
-            dl.longitude,
-            dl.latitude,
-            30,
-            color=colors[key],
-            transform=ccrs.PlateCarree(),
-        )
-        ax.text(
-            dl.longitude[-1] + 1e-3,
-            dl.latitude[-1],
-            f"{key}",
-            transform=ccrs.PlateCarree(),
-        )
+        colors = {key: c for key, c in zip(dr, get_cmap_colors(len(dr)))}
+        for key, d in dr.items():
+            dl = d.last(offset)
+            ax.scatter(
+                dl.longitude,
+                dl.latitude,
+                30,
+                color=colors[key],
+                transform=ccrs.PlateCarree(),
+            )
+            ax.scatter(
+                dl.longitude,
+                dl.latitude,
+                30,
+                color=colors[key],
+                transform=ccrs.PlateCarree(),
+            )
+            ax.text(
+                dl.longitude[-1] + 1e-3,
+                dl.latitude[-1],
+                f"{key}",
+                transform=ccrs.PlateCarree(),
+            )
 
 
 def monitor_drifters(refresh_time=5, **kwargs):
