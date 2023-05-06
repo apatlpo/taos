@@ -1,6 +1,9 @@
 __all__ = ["mars", "drifters", "utils", "sensors"]
 
 from . import mars
-from . import drifters
+try:
+    from . import drifters
+except:
+    pass
 from . import utils
 from . import sensors
