@@ -132,5 +132,8 @@ def read_carthe_drifters(file):
           .sort_values("id")
          )
     df = df.set_index("id")
-        
+
+    # make sure time is a datetime
+    df["time"] = pd.to_datetime(df["time"])
+    
     return df
