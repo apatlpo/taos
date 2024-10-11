@@ -36,7 +36,7 @@ def read_lern_ship(file, correct_day=None):
             # assumes Timestamp
             day = correct_day
         t0 = df["time"][0]
-        dt = day - t0.round("1D")
+        dt = day - t0.floor("1D")
         print(f"Fix first time from {t0} to {t0 + dt}")
         df["time"] = (df["time"] + dt).dt.tz_localize(
             None
@@ -87,6 +87,11 @@ def read_lern_sonde(file, tz_offset=0, stype=0):
     # 'C-mS/cm-21A101173', 'SAL-PSU-21A101173', 
     # 'DEP m-20H100561']
 
+    # taos2-drifters1 
+    # Date (MM/DD/YYYY)	Time (HH:mm:ss)	Time (Fract. Sec)	Site Name	Chlorophyll RFU	Chlorophyll ug/L	Cond µS/cm	Depth m	nLF Cond µS/cm	ODO % sat	ODO % local	ODO mg/L	Pressure psi a	Sal psu	SpCond µS/cm	BGA PE RFU	BGA PE ug/L	TDS mg/L	Turbidity FNU	TSS mg/L	Temp °C	Vertical Position m	GPS Latitude °	GPS Longitude °	Altitude m	Battery V	Cable Pwr V	Barometer mmHg
+    #13/06/2023	14:34:18	0.0	frank	0	02	0	55	43640	0	0	596	51416	8	104	1	107	6	8	13	0	868	33	39	50794	7	1	84	5	16	33017	-0	63	0	17	626	0	633	49	35327	-0	46210	5	0	5	25	0	0	759	0
+
+    
     if stype==0:
         columns = ['Date', 'Time', 'Site', 'Unit ID', 'User ID',
          'temperature', 'air_pressure', 'DO_p', 'DO_mgL', 
@@ -98,6 +103,13 @@ def read_lern_sonde(file, tz_offset=0, stype=0):
          'temperature', 'air_pressure', 'DO_p', 'DO_mgL', 
          'conductivity', 'salinity',
          'depth', 'latitude', 'longitude']
+    elif stype==2:
+        columns = ['Date', 'Time', 'Site', 'Chl_RFU', 'Chl_ugL', 'conductivity','depth',
+                   'conductivity_mS', 'DO_p', 'DO_l', 'pressure', 'salinity', 'conductivity_Sp',
+                   'BGA_PE_RFU', 'BGA_PE_ug', 'TDS', 'Turbidity_FNU', 'TSS', 'temperature', 'vertical_position', 
+                   'latitude', 'longitude', 'altitude', 'battery', 'cable_pwr', 'air_pressure'
+                  ]
+        # reprocess data
 
     df = pd.DataFrame(d[1:], columns=columns)
     
