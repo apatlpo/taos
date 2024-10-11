@@ -3,6 +3,7 @@ hal/lib_install_proxy.md
 campaign/*.csv
 campaign/pacific_url
 campaign/data_old
+emr/courseulles_0/
 
 clean~
 clean
